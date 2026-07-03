@@ -19,6 +19,25 @@ terraform {
       source  = "oracle/oci"
       version = "~> 7.0"
     }
+
+    # Bootstrap (R17-R19): install and manage ArgoCD on the OKE cluster this
+    # same config creates. See argocd-providers.tf for how these three are
+    # configured (OKE exec-token auth) and argocd.tf for what they apply.
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 3.1"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 3.1"
+    }
+    # gavinbunney/kubectl (R18), not hashicorp/kubernetes's own manifest
+    # resource: it defers CRD schema validation to apply time, so `plan`
+    # doesn't fail on a fresh cluster with no argoproj.io CRDs yet.
+    kubectl = {
+      source  = "gavinbunney/kubectl"
+      version = "~> 1.19"
+    }
   }
 
   backend "s3" {

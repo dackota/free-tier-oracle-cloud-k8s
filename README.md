@@ -116,6 +116,35 @@ Copy `terraform/terraform.tfvars.example` to `terraform/terraform.tfvars`
 Because there is no state locking (R2 — OCI's S3-compatible endpoint has no
 DynamoDB equivalent), only run `plan`/`apply` from one place at a time.
 
+The same apply also runs the **Bootstrap** step (R17-R22): it installs ArgoCD
+via `helm_release` and applies a single bootstrap ArgoCD Application pointing
+at `gitops/bootstrap` in this repo (pulled anonymously over public HTTPS — no
+repository credential, R20). From there, ArgoCD reconciles `gitops/platform/`
+(including managing its own Helm release, R22) and `gitops/workloads/` from
+git — adding a platform add-on or a workload is a commit under `gitops/`, not
+a second `terraform apply` (R21). `terraform/variables.tf`'s
+`gitops_repo_url` defaults to this repo's own URL; override it if you're
+running from a fork.
+
+## Accessing the ArgoCD UI (v1: port-forward only)
+
+The ArgoCD UI/API is **not exposed publicly** in v1 (R31) — no Gateway,
+HTTPRoute, Ingress, or public LoadBalancer fronts it, and the `argocd-server`
+Service stays `ClusterIP`. Reach it locally instead:
+
+```sh
+kubectl --context <ctx> -n argocd port-forward svc/argocd-server 8080:80
+```
+
+Then open `http://localhost:8080`. The initial admin password is the
+`argocd-server` pod name-derived secret (see the [ArgoCD getting-started
+docs](https://argo-cd.readthedocs.io/en/stable/getting_started/#4-login-using-the-cli)):
+
+```sh
+kubectl --context <ctx> -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 -d
+```
+
 ## OKE node-cycle / upgrade runbook
 
 OKE node pools are cycled manually, one node at a time, to pick up a new

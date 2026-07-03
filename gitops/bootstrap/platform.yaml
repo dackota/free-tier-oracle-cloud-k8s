@@ -1,0 +1,29 @@
+# Child Application of the root "bootstrap" Application that Terraform
+# applies (terraform/argocd.tf, R18): reconciles everything under
+# gitops/platform/ — for now just ArgoCD's own self-management Application
+# (argocd.yaml, R22). Platform add-ons from later slices (the Gateway/Traefik,
+# cert-manager, Longhorn, metrics-server) land here as more manifests under
+# gitops/platform/ — no Terraform change required (R21).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/dackota/free-tier-oracle-cloud-k8s.git
+    targetRevision: HEAD
+    path: gitops/platform
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

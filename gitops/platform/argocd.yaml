@@ -1,0 +1,83 @@
+# ArgoCD manages itself (R22): once this syncs, this Application becomes the
+# system of record for the argo-cd Helm release that terraform/argocd.tf
+# (helm_release.argocd) originally installed — future ArgoCD upgrades are a
+# commit here, not a `terraform apply`.
+#
+# VALUES-SYNC CONTRACT (R17 <-> R22) — read before touching either side:
+# spec.source.targetRevision and spec.source.helm.valuesObject below MUST
+# stay identical to the chart version and local.argocd_helm_values in
+# terraform/argocd.tf. ArgoCD's first sync of THIS Application diffs against
+# the Helm release Terraform already installed; if the chart version or
+# values differ, that first sync becomes a real upgrade instead of a no-op —
+# and an upgrade that changes an immutable Deployment label selector orphans
+# the old ReplicaSet's pods. This is a documented scar from the reference EKS
+# setup this project ported from. Change one side, change the other in the
+# same commit.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argo-cd
+    targetRevision: "10.1.1" # pinned — must match helm_release.argocd's version
+    helm:
+      valuesObject:
+        configs:
+          params:
+            # No TLS on the Service; acceptable because the UI/API is reached
+            # only via `kubectl port-forward` (see README.md), never a public
+            # LoadBalancer/Ingress (R31).
+            server.insecure: "true"
+
+        # No SSO/dex/Okta in v1 — disable dex-server entirely rather than run
+        # an idle pod on a 4 OCPU / 24 GB cluster.
+        dex:
+          enabled: false
+
+        # No notification channels (Slack/webhook/etc.) configured in v1 —
+        # the controller would just idle; skip it to keep the footprint
+        # small.
+        notifications:
+          enabled: false
+
+        # Modest, homelab-sized requests: this cluster is the full Always
+        # Free A1 allowance (4 OCPU / 24 GB across 2 nodes), and ArgoCD
+        # shares it with every workload it goes on to manage — keep it
+        # small, don't over-provision.
+        controller:
+          replicas: 1
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+        server:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+        repoServer:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+        applicationSet:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  # R20: no repository-credential Secret — this source is the public
+  # argo-helm chart repo (ADR 0003), pulled anonymously like everything else.
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
