@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Test fixture: shadows the real `sleep` binary so tests never actually
+# wait out a backoff. Placed first on PATH by the test runner for the
+# duration of a single wrapper invocation only. Records each call in
+# SLEEP_COUNT_FILE so the test can assert "sleeps performed" without
+# timing anything.
+#
+# Required env var:
+#   SLEEP_COUNT_FILE - path to a counter file this stub increments per call
+set -euo pipefail
+
+: "${SLEEP_COUNT_FILE:?SLEEP_COUNT_FILE env var is required}"
+
+count=0
+if [ -f "$SLEEP_COUNT_FILE" ]; then
+  count="$(cat "$SLEEP_COUNT_FILE")"
+fi
+count=$((count + 1))
+echo "$count" >"$SLEEP_COUNT_FILE"
+exit 0
