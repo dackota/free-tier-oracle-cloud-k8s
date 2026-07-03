@@ -1,5 +1,5 @@
 # R19: OKE has no static, long-lived kubeconfig token to hand a provider —
-# credentials for the helm/kubernetes/kubectl providers below come from
+# credentials for the helm/kubectl providers below come from
 # `oci ce cluster generate-token`, invoked on demand via each provider's
 # `exec` block (OCI's analogue of the reference's `aws eks get-token`). No
 # token is ever written to state.
@@ -39,7 +39,7 @@ locals {
     yamldecode(data.oci_containerengine_cluster_kube_config.main.content)["clusters"][0]["cluster"]["certificate-authority-data"]
   )
 
-  # Shared across all three providers below so the exec invocation can't
+  # Shared across both providers below so the exec invocation can't
   # drift between them.
   argocd_exec_args = ["ce", "cluster", "generate-token", "--cluster-id", oci_containerengine_cluster.main.id, "--region", var.region]
 }
@@ -47,8 +47,8 @@ locals {
 # helm provider v3 schema: Kubernetes connection settings live under a
 # `kubernetes = { ... }` object, not a nested block. v3 rewrote this provider
 # on Terraform's plugin framework, which changed the shape from v2's
-# `kubernetes { ... }` block — the kubernetes/kubectl providers below still
-# use the classic block syntax.
+# `kubernetes { ... }` block — the kubectl provider below still uses the
+# classic block syntax.
 provider "helm" {
   kubernetes = {
     host                   = local.argocd_cluster_host
@@ -59,17 +59,6 @@ provider "helm" {
       command     = "oci"
       args        = local.argocd_exec_args
     }
-  }
-}
-
-provider "kubernetes" {
-  host                   = local.argocd_cluster_host
-  cluster_ca_certificate = local.argocd_cluster_ca_certificate
-
-  exec {
-    api_version = "client.authentication.k8s.io/v1beta1"
-    command     = "oci"
-    args        = local.argocd_exec_args
   }
 }
 
