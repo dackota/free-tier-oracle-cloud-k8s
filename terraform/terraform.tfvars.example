@@ -1,0 +1,10 @@
+# Copy this file to terraform.tfvars (gitignored — see .gitignore / ADR 0003)
+# and fill in your own values. terraform.tfvars is never committed.
+
+region = "us-ashburn-1" # tenancy's home region; required, no default (R7)
+
+tenancy_ocid     = "ocid1.tenancy.oc1..aaaaaaaaexampletenancyocidxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+user_ocid        = "ocid1.user.oc1..aaaaaaaaexampleuserocidxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+fingerprint      = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
+private_key_path = "~/.oci/oci_api_key.pem"
+compartment_ocid = "ocid1.compartment.oc1..aaaaaaaaexamplecompartmentocidxxxxxxxxxxxxxxxxxxxxxxxxxxx"
