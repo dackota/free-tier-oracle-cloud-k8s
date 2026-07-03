@@ -21,14 +21,10 @@ terraform {
     }
 
     # Bootstrap (R17-R19): install and manage ArgoCD on the OKE cluster this
-    # same config creates. See argocd-providers.tf for how these three are
+    # same config creates. See argocd-providers.tf for how these two are
     # configured (OKE exec-token auth) and argocd.tf for what they apply.
     helm = {
       source  = "hashicorp/helm"
-      version = "~> 3.1"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
       version = "~> 3.1"
     }
     # gavinbunney/kubectl (R18), not hashicorp/kubernetes's own manifest
