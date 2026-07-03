@@ -48,9 +48,13 @@ resource "oci_core_security_list" "worker_nodes" {
     }
   }
 
+  # Node-port traffic reaches the workers via the LB data plane (lbs subnet),
+  # so scope these two rules to the lbs subnet rather than the reference's
+  # 0.0.0.0/0 — NodePort Services must not be reachable directly from the
+  # internet (security-hardening follow-up; matches the kube-proxy rule below).
   ingress_security_rules {
     description = "Load balancer to worker nodes node TCP ports"
-    source      = "0.0.0.0/0"
+    source      = local.subnets.lbs
     protocol    = local.protocol_numbers["TCP"]
     tcp_options {
       min = 30000
@@ -60,7 +64,7 @@ resource "oci_core_security_list" "worker_nodes" {
 
   ingress_security_rules {
     description = "Load balancer to worker nodes node UDP ports"
-    source      = "0.0.0.0/0"
+    source      = local.subnets.lbs
     protocol    = local.protocol_numbers["UDP"]
     udp_options {
       min = 30000

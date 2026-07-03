@@ -10,6 +10,10 @@
 crash.log
 crash.*.log
 
+# Saved plan files can embed secret values pulled from state/variables.
+*.tfplan
+tfplan
+
 # Local variable files may carry real credentials/OCIDs; only the committed
 # *.tfvars.example placeholder is tracked.
 *.tfvars
