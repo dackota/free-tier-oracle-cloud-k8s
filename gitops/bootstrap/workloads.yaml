@@ -1,0 +1,30 @@
+# Child Application of the root "bootstrap" Application that Terraform
+# applies (terraform/argocd.tf, R18): reconciles everything under
+# gitops/workloads/ — empty in this slice (R21); the proof app and any user
+# workload land here in a later slice as more manifests under
+# gitops/workloads/, no Terraform change required. Syncs cleanly to a healthy
+# no-op against the empty directory (the .gitkeep placeholder has no
+# yaml/yml/json extension, so ArgoCD's directory source ignores it).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: workloads
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/dackota/free-tier-oracle-cloud-k8s.git
+    targetRevision: HEAD
+    path: gitops/workloads
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
