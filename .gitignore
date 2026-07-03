@@ -1,0 +1,35 @@
+# This repo is public (ADR 0003): .gitignore is a security control, not a
+# convenience. Everything below is a hard boundary — see
+# scripts/check-gitignore-control.sh for the automated check.
+
+# Terraform state — the state backend (ADR 0001) is an OCI Object Storage
+# bucket, not git. State contains plaintext secrets (kubeconfig tokens, keys).
+*.tfstate
+*.tfstate.*
+.terraform/
+crash.log
+crash.*.log
+
+# Local variable files may carry real credentials/OCIDs; only the committed
+# *.tfvars.example placeholder is tracked.
+*.tfvars
+*.auto.tfvars
+!*.tfvars.example
+
+# Partial backend config files are tenancy-specific (bucket/namespace/region)
+# and are supplied locally via `-backend-config`, never committed.
+*.tfbackend
+
+# OCI API signing key material (R6) — the provider's private key, never
+# committed; only its filesystem path is configured via a variable.
+*.pem
+oci_api_key*
+
+# Kubeconfig — cluster credentials, never committed.
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+.kube/
+
+# OS / editor cruft
+.DS_Store
