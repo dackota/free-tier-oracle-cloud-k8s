@@ -36,6 +36,18 @@ variable "compartment_ocid" {
   type        = string
 }
 
+# R14: source CIDR ranges allowed to open sessions against the managed OCI
+# Bastion. Defaults to 0.0.0.0/0 — see the comment on oci_bastion_bastion.main
+# for why that default is a deliberate, defense-in-depth-gated choice for a
+# single-operator homelab with a dynamic home IP, not an open door to the
+# worker nodes themselves. Override in terraform.tfvars to narrow it once a
+# static source IP/CIDR is available.
+variable "bastion_allowed_cidr_blocks" {
+  description = "CIDR blocks allowed to create sessions against the managed OCI Bastion. Defaults to [\"0.0.0.0/0\"], acceptable because Bastion access is still gated by IAM policy, an SSH key, and a time-boxed ephemeral session regardless of source CIDR."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
 # Budget guardrail (R30): the recipient for the near-zero-threshold spend
 # alert. Supplied via terraform.tfvars (gitignored) or TF_VAR_* — never a
 # literal email address in committed HCL (ADR 0003: public repo, no secrets).
