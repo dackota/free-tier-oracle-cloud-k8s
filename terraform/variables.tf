@@ -35,3 +35,11 @@ variable "compartment_ocid" {
   description = "OCID of the OCI compartment that will own resources provisioned by this config."
   type        = string
 }
+
+# Budget guardrail (R30): the recipient for the near-zero-threshold spend
+# alert. Supplied via terraform.tfvars (gitignored) or TF_VAR_* — never a
+# literal email address in committed HCL (ADR 0003: public repo, no secrets).
+variable "budget_alert_email_address" {
+  description = "Email address notified by the budget guardrail's alert rules when forecasted or actual spend crosses the near-zero threshold."
+  type        = string
+}
