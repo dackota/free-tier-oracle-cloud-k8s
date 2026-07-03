@@ -11,3 +11,9 @@ compartment_ocid = "ocid1.compartment.oc1..aaaaaaaaexamplecompartmentocidxxxxxxx
 
 # Placeholder only — never commit a real email address (ADR 0003).
 budget_alert_email_address = "alerts@example.com"
+
+# Optional (R14): CIDRs allowed to open sessions against the managed OCI Bastion.
+# Defaults to ["0.0.0.0/0"] — see oci-bastion.tf for why that's a deliberate,
+# defense-in-depth-gated default. Uncomment and narrow to your static IP/CIDR
+# once one is available.
+# bastion_allowed_cidr_blocks = ["203.0.113.4/32"]
