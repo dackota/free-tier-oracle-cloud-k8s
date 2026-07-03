@@ -42,4 +42,10 @@ variable "compartment_ocid" {
 variable "budget_alert_email_address" {
   description = "Email address notified by the budget guardrail's alert rules when forecasted or actual spend crosses the near-zero threshold."
   type        = string
+  sensitive   = true # PII: keep the recipient out of plan/apply and CI output
+
+  validation {
+    condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.budget_alert_email_address))
+    error_message = "budget_alert_email_address must be a valid email address (e.g. alerts@example.com)."
+  }
 }
