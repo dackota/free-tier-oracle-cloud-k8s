@@ -8,3 +8,6 @@ user_ocid        = "ocid1.user.oc1..aaaaaaaaexampleuserocidxxxxxxxxxxxxxxxxxxxxx
 fingerprint      = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
 private_key_path = "~/.oci/oci_api_key.pem"
 compartment_ocid = "ocid1.compartment.oc1..aaaaaaaaexamplecompartmentocidxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# Placeholder only — never commit a real email address (ADR 0003).
+budget_alert_email_address = "alerts@example.com"
