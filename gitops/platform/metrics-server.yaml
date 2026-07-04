@@ -1,0 +1,54 @@
+# metrics-server (R26): Platform add-on that provides the Metrics API so
+# `kubectl top` and HPA-style metrics work. Deployed into kube-system — the
+# chart's conventional home for this cluster-wide aggregator — rather than a
+# dedicated namespace; it's a single small Deployment, not worth segregating.
+#
+# OKE KUBELET-TLS SCAR: on managed OKE the kubelet's serving certificate is
+# not signed by a CA metrics-server trusts, so the scrape to each kubelet's
+# :10250 fails with a x509 "certificate signed by unknown authority" error
+# and the Metrics API never reports Ready. The documented upstream fix
+# (kubernetes-sigs/metrics-server FAQ, same workaround kOps/kubeadm/managed
+# clusters use) is --kubelet-insecure-tls, which skips verifying that cert.
+# The chart's own `defaultArgs` already carries
+# --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname, so only
+# the insecure-TLS flag needs adding here via `args` — the deployment
+# template renders `defaultArgs` and `args` as two separate appended `range`
+# blocks (templates/deployment.yaml), so this list adds to the baked-in
+# defaults rather than replacing them.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metrics-server
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://kubernetes-sigs.github.io/metrics-server/
+    chart: metrics-server
+    targetRevision: "3.13.1" # pinned — chart 3.13.1 / metrics-server app v0.8.1
+    helm:
+      valuesObject:
+        args:
+          - --kubelet-insecure-tls
+
+        # Modest, homelab-sized request: the chart default (100m/200Mi) is
+        # already small enough for the 4 OCPU / 24 GB free-tier budget — kept
+        # explicit here rather than silently inherited, matching the other
+        # platform Applications (see argocd.yaml).
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  # R20: no repository-credential Secret — this source is the public
+  # metrics-server chart repo (ADR 0003), pulled anonymously like everything
+  # else.
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
