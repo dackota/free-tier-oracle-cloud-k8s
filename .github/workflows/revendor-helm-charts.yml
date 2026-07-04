@@ -1,0 +1,90 @@
+name: Revendor Helm charts
+
+# Dependabot's helm updater only ever edits Chart.yaml/Chart.lock — it never
+# refreshes the vendored charts/*.tgz archive (see
+# .github/dependabot.yml). Left alone, a merged version bump silently keeps
+# deploying the old chart, since `helm template` uses whatever's in charts/
+# without checking it matches Chart.yaml. This runs after such a change
+# lands on main and re-vendors the archive so it never drifts.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "gitops/**/Chart.yaml"
+      - "gitops/**/Chart.lock"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: revendor-helm-charts
+  cancel-in-progress: false
+
+jobs:
+  revendor:
+    # Defense in depth: the job only ever touches charts/*.tgz, never
+    # Chart.yaml/Chart.lock, so it can't retrigger itself via the path
+    # filter above — this actor check is a second guard against a loop.
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: Azure/setup-helm@v5
+
+      - name: Determine changed chart directories
+        id: charts
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          after="${{ github.event.after }}"
+          if [ "$before" = "0000000000000000000000000000000000000000" ]; then
+            dirs=$(find gitops -mindepth 3 -maxdepth 3 -name Chart.yaml -exec dirname {} \; | sort -u)
+          else
+            dirs=$(git diff --name-only "$before" "$after" -- 'gitops/**/Chart.yaml' 'gitops/**/Chart.lock' \
+              | xargs -r -n1 dirname | sort -u)
+          fi
+          {
+            echo "dirs<<CHART_DIRS_EOF"
+            echo "$dirs"
+            echo "CHART_DIRS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Re-vendor chart dependencies
+        run: |
+          set -euo pipefail
+          while IFS= read -r dir; do
+            [ -z "$dir" ] && continue
+            if ! grep -q '^dependencies:' "$dir/Chart.yaml"; then
+              echo "skip $dir (no chart dependencies)"
+              continue
+            fi
+            echo "::group::helm dependency build $dir"
+            rm -rf "${dir:?}/charts"
+            helm dependency build "$dir"
+            echo "::endgroup::"
+          done <<< "${{ steps.charts.outputs.dirs }}"
+          # Only charts/*.tgz is meant to be committed by this workflow —
+          # discard Chart.lock's `generated:` timestamp rewrite so this push
+          # doesn't match the Chart.lock path filter and retrigger itself.
+          git checkout -- '**/Chart.lock' 2>/dev/null || true
+
+      - name: Commit re-vendored charts
+        run: |
+          set -euo pipefail
+          while IFS= read -r dir; do
+            [ -z "$dir" ] && continue
+            git add -A -- "$dir/charts"
+          done <<< "${{ steps.charts.outputs.dirs }}"
+          if git diff --cached --quiet; then
+            echo "No chart drift to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(gitops): re-vendor Helm chart dependencies"
+          git push
