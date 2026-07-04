@@ -17,3 +17,13 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    ignore:
+      # jetstack/cert-manager's chart repo has no stable release past
+      # v1.20.3 right now — only v1.21.0-alpha.x/-beta.x prereleases. A
+      # dependabot-core Helm-updater bug strips the "v" prefix and
+      # prerelease suffix and tries to lock the chart to a synthetic
+      # "1.21.0" that doesn't exist in the index, failing the whole run
+      # (see Actions run 28721903373). Remove once cert-manager actually
+      # publishes a stable v1.21.0 (or later) and Dependabot picks it up.
+      - dependency-name: "cert-manager"
+        versions: ["1.21.0"]
