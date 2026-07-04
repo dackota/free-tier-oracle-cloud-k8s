@@ -1,0 +1,25 @@
+# cert-manager Certificate (R29) that populates the shared Gateway's
+# `websecure` listener TLS Secret. Lives in the `traefik` namespace
+# (NOT proof-app) because the Gateway's `certificateRefs` entry
+# (gitops/platform/traefik/values.yaml) is a name-only, no-namespace
+# reference, which Gateway API resolves against the Gateway's OWN namespace
+# (traefik) -- a Certificate anywhere else would populate a Secret the
+# Gateway never looks at.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: traefik-gateway-tls
+  namespace: traefik
+spec:
+  # Must match the Secret name the websecure listener references exactly.
+  secretName: traefik-gateway-tls
+  dnsNames:
+    - {{ include "proof-app.host" . }}
+  issuerRef:
+    # letsencrypt-prod by default (R29 wants a browser-trusted cert); the
+    # operator may point this at letsencrypt-staging during first live
+    # bring-up to dodge Let's Encrypt production rate limits (see
+    # values.yaml), then flip back once issuance is proven.
+    name: {{ .Values.issuer }}
+    kind: ClusterIssuer
+    group: cert-manager.io

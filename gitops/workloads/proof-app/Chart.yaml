@@ -1,0 +1,11 @@
+apiVersion: v2
+name: proof-app
+description: proof-app (R27-R29) — the single v1 proof workload (podinfo),
+  wrapping the upstream chart plus local templates for the shared Gateway
+  routing and the cert-manager Certificate that back its HTTPS URL
+type: application
+version: 0.1.0
+dependencies:
+  - name: podinfo
+    version: 6.14.0
+    repository: https://stefanprodan.github.io/podinfo
