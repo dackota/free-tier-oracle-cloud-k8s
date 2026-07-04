@@ -1,0 +1,102 @@
+# Traefik as the Gateway API implementation (R23, ADR 0004). Sync-wave "0"
+# (default, stated explicitly so the CRDs-before-Traefik ordering in R33 is
+# visible in-repo, not just implied by omission) runs after gateway-api-crds
+# .yaml's wave "-1" reconciles healthy — the kubernetesGateway provider and
+# the Gateway/GatewayClass this chart creates below all need those CRDs to
+# already be Established, or ArgoCD's first sync fails on an unknown kind on
+# a fresh cluster.
+#
+# One Application does three jobs, all via the upstream chart's native
+# values rather than hand-rolled manifests (cleaner, stays in sync with the
+# chart's own defaults on upgrade):
+#   1. The Traefik proxy Deployment + its data-plane Service (LoadBalancer),
+#      which provisions the single Always Free OCI load balancer.
+#   2. The `traefik` GatewayClass (providers.kubernetesGateway.enabled +
+#      gatewayClass.enabled, both chart defaults —
+#      traefik.io/gateway-controller).
+#   3. The shared `Gateway` (gateway.enabled, a chart default) with the
+#      HTTP :80 listener the chart already enables by default (needed so
+#      cert-manager's HTTP-01 challenge, a sibling slice, can solve through
+#      an HTTPRoute on port 80) plus the HTTPS :443 listener added below.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://traefik.github.io/charts
+    chart: traefik
+    targetRevision: "41.0.1" # pinned — Traefik v3.7.5
+    helm:
+      valuesObject:
+        # Gateway API implementation (R23): enables the kubernetesGateway
+        # provider so Traefik watches Gateway/HTTPRoute and creates/owns the
+        # GatewayClass + Gateway below (gatewayClass.enabled and
+        # gateway.enabled are both already `true` in the chart's defaults;
+        # restated here for visibility since they're load-bearing for R23).
+        providers:
+          kubernetesGateway:
+            enabled: true
+        gatewayClass:
+          enabled: true
+          # No name override — chart default is "traefik", matching the
+          # `traefik` GatewayClass R23 requires.
+        gateway:
+          enabled: true
+          listeners:
+            # HTTP :80 — chart default (port 8000 -> exposedPort 80), kept
+            # implicit; cert-manager's HTTP-01 challenge (sibling slice, R24)
+            # solves through an HTTPRoute attached to this listener.
+            #
+            # HTTPS :443 — added here for R23. certificateRefs names the
+            # Secret cert-manager will populate in a LATER slice (R24); no
+            # Certificate/ClusterIssuer is created in this slice on purpose,
+            # to keep the routing layer decoupled from the cert-manager
+            # rollout. The cert-manager slice is expected to also add a
+            # `cert-manager.io/cluster-issuer` annotation to
+            # `gateway.annotations` (left absent here) so its Gateway API
+            # integration provisions this exact Secret.
+            websecure:
+              port: 8443
+              protocol: HTTPS
+              mode: Terminate
+              certificateRefs:
+                - kind: Secret
+                  name: traefik-gateway-tls
+        # Data-plane Service (R23): stays `LoadBalancer` (chart default) —
+        # this is what provisions the single Always Free OCI load balancer.
+        # Annotated for the OCI flexible shape at the free-tier bandwidth
+        # cap: a *fixed* shape (e.g. "100Mbps") is billable, and a second
+        # LoadBalancer Service of any shape would exceed the one-LB Always
+        # Free allowance, so both the shape and its min/max bandwidth are
+        # pinned explicitly rather than left to the OCI CCM's own default.
+        service:
+          annotations:
+            service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+            service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+            service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "10"
+        # Modest, homelab-sized requests (same rationale as
+        # gitops/platform/argocd.yaml): this cluster is the full Always Free
+        # A1 allowance (4 OCPU / 24 GB across 2 nodes) shared with every
+        # other platform add-on and workload.
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: traefik
+  # R20-style posture carried over: no repository-credential Secret — this
+  # source is the public traefik-helm-chart repo (ADR 0003), pulled
+  # anonymously like every other platform add-on.
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
