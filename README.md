@@ -21,16 +21,16 @@ gitops/
   workloads/  User applications, managed by ArgoCD like everything else here.
 ```
 
-This repo is **public** and contains **no plaintext secrets** (ADR 0003) —
-Terraform state, credentials, and kubeconfig all live outside git. See
-`.gitignore`, which enforces that boundary, and
-`scripts/check-gitignore-control.sh`, which verifies it.
+This repo is **public** and contains **no plaintext secrets** — Terraform
+state, credentials, and kubeconfig all live outside git. See `.gitignore`,
+which enforces that boundary, and `scripts/check-gitignore-control.sh`, which
+verifies it.
 
 ## Prerequisites
 
 1. **An OCI account** (tenancy) with the Always Free resources available
    (region matters — not every region has A1.Flex capacity).
-2. **An OCI API signing key** for the OCI Terraform provider (R6):
+2. **An OCI API signing key** for the OCI Terraform provider:
    - OCI Console → Identity & Security → Users → (your user) → API Keys →
      **Add API Key** → generate a new key pair.
    - Download the private key PEM; note the **fingerprint** shown after
@@ -42,20 +42,32 @@ Terraform state, credentials, and kubeconfig all live outside git. See
    completed before the first `terraform init`.
 4. **Terraform** >= 1.6 installed locally. Applies are run manually from the
    operator's laptop; there is no CI for this repo.
+5. **The OCI CLI** (`oci`) installed and on `PATH` — required at *apply* time,
+   not just for convenience. The helm and kubectl providers authenticate to the
+   freshly-created cluster by exec'ing `oci ce cluster generate-token`, so
+   without the `oci` binary the Bootstrap step fails. The providers pass it
+   explicit **API-key** credentials from your `TF_VAR_*` values (see
+   `terraform/argocd-providers.tf`), so the provider side is self-configuring —
+   but for your own `kubectl` access (below) configure the CLI with the same
+   API-key (`oci setup config`, API-key auth). Do **not** leave its `DEFAULT`
+   profile pointed at a session token (`oci session authenticate`): OKE rejects
+   the tokens a session profile mints, surfacing as
+   `the server has asked for the client to provide credentials`.
+6. **kubectl** installed locally, to reach the cluster after apply.
 
 ## Backend provisioning (one-time, manual)
 
 Terraform state for this project is stored remotely in an **OCI Object
-Storage bucket**, reached via Terraform's S3-compatible backend (ADR 0001) —
-not in git, and not on HCP Terraform. A Terraform config cannot create the
-bucket that holds its own state, so this step is a manual runbook, run once,
-**before the first `terraform init`**:
+Storage bucket**, reached via Terraform's S3-compatible backend — not in git,
+and not on HCP Terraform. A Terraform config cannot create the bucket that
+holds its own state, so this step is a manual runbook, run once, **before the
+first `terraform init`**:
 
 1. **Create the state bucket** (OCI Console → Storage → Object Storage &
    Archive Storage → Buckets → **Create Bucket**):
    - Name it, e.g. `free-tier-oke-terraform-state`.
-   - Set **Versioning: Enabled** (R3) — this is the only recovery path for
-     state, since there is no state locking (see below).
+   - Set **Versioning: Enabled** — this is the only recovery path for state,
+     since there is no state locking (see below).
    - Note the **Object Storage Namespace** shown at the top of the Buckets
      page — you'll need it to construct the S3-compatible endpoint URL.
 2. **Create a Customer Secret Key** for backend authentication (OCI Console →
@@ -76,17 +88,26 @@ the backend's authentication (Customer Secret Key) as the AWS-named
 environment variables the S3 backend reads natively:
 
 ```sh
-# Provider auth (R6) — required for every plan/apply.
+# Provider auth — required for every plan/apply.
 export TF_VAR_tenancy_ocid="ocid1.tenancy.oc1..xxxxxxxx"
 export TF_VAR_user_ocid="ocid1.user.oc1..xxxxxxxx"
 export TF_VAR_fingerprint="aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
 export TF_VAR_private_key_path="$HOME/.oci/oci_api_key.pem"
-export TF_VAR_region="us-ashburn-1"          # tenancy's home region; required, no default (R7)
+export TF_VAR_region="us-ashburn-1"          # tenancy's home region; required, no default
 export TF_VAR_compartment_ocid="ocid1.compartment.oc1..xxxxxxxx"
 
 # Backend auth (the Customer Secret Key from backend provisioning above).
 export AWS_ACCESS_KEY_ID="<customer-secret-key-access-key>"
 export AWS_SECRET_ACCESS_KEY="<customer-secret-key-secret-key>"
+
+# Required for every plan/apply. Newer AWS SDKs default to computing a flexible
+# checksum on PutObject, which forces `Content-Encoding: aws-chunked`. OCI Object
+# Storage rejects that with `501 NotImplemented: AWS chunked encoding not
+# supported`, breaking state uploads. `when_required` stops the SDK from adding
+# it; the backend's `skip_s3_checksum = true` (versions.tf) is the other half —
+# both are needed.
+export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
+export AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
 ```
 
 The state bucket's name, region, and S3-compatible endpoint are
@@ -113,26 +134,65 @@ Copy `terraform/terraform.tfvars.example` to `terraform/terraform.tfvars`
 (gitignored) if you'd rather set the provider variables that way instead of
 `TF_VAR_*` env vars — never commit the populated file.
 
-Because there is no state locking (R2 — OCI's S3-compatible endpoint has no
+Because there is no state locking (OCI's S3-compatible endpoint has no
 DynamoDB equivalent), only run `plan`/`apply` from one place at a time.
 
-The same apply also runs the **Bootstrap** step (R17-R22): it installs ArgoCD
-via `helm_release` and applies a single bootstrap ArgoCD Application pointing
-at `applicationsets/` in this repo (pulled anonymously over public HTTPS — no
-repository credential, R20). That directory holds two ApplicationSets
+The same apply also runs the **Bootstrap** step: it installs ArgoCD via
+`helm_release` and applies a single bootstrap ArgoCD Application pointing at
+`applicationsets/` in this repo (pulled anonymously over public HTTPS — no
+repository credential). That directory holds two ApplicationSets
 (`platform.yaml`, `workloads.yaml`); each uses a `*/config.yaml` git-files
 generator to discover the per-add-on / per-workload chart directories under
 `gitops/platform/` and `gitops/workloads/` and generates one ArgoCD Application
-apiece — including ArgoCD managing its own Helm release (R22). Adding a platform
+apiece — including ArgoCD managing its own Helm release. Adding a platform
 add-on or a workload is a new chart directory committed under `gitops/`, not a
-second `terraform apply` (R21). `terraform/variables.tf`'s `gitops_repo_url`
-defaults to this repo's own URL; override it if you're running from a fork.
+second `terraform apply`. `terraform/variables.tf`'s `gitops_repo_url`
+defaults to this repo's own URL; override it if you're running from a fork —
+and that fork **must be public**. The bootstrap Application pulls anonymously
+over HTTPS with no repository credential, so a private repo never syncs: ArgoCD
+reports `failed to list refs: authentication required: Repository not found`
+and no child Applications appear.
 
-## Accessing the ArgoCD UI (v1: port-forward only)
+## Connecting to the cluster
 
-The ArgoCD UI/API is **not exposed publicly** in v1 (R31) — no Gateway,
-HTTPRoute, Ingress, or public LoadBalancer fronts it, and the `argocd-server`
-Service stays `ClusterIP`. Reach it locally instead:
+`terraform apply` creates the OKE cluster but does **not** write a kubeconfig.
+Generate one with the OCI CLI (the same tool the providers use for their
+in-apply auth — see Prerequisites). First get the cluster OCID, from the OCI
+Console (Developer Services → Kubernetes Clusters → your cluster → **Access
+Cluster**, which also prints these exact commands) or from the CLI:
+
+```sh
+oci ce cluster list \
+  --compartment-id "$TF_VAR_compartment_ocid" \
+  --name k8s-cluster --lifecycle-state ACTIVE \
+  --query 'data[0].id' --raw-output
+```
+
+Then write a kubeconfig for it and point kubectl at the public endpoint:
+
+```sh
+oci ce cluster create-kubeconfig \
+  --cluster-id <cluster-ocid> \
+  --file "$HOME/.kube/config" \
+  --region "$TF_VAR_region" \
+  --token-version 2.0.0 \
+  --kube-endpoint PUBLIC_ENDPOINT
+
+kubectl config get-contexts                # note the generated context name
+kubectl --context <ctx> get nodes          # expect 2 A1 nodes, STATUS Ready
+```
+
+The generated kubeconfig authenticates every call by exec'ing
+`oci ce cluster generate-token`, so the OCI CLI must stay configured with
+**API-key** auth (a session-token `DEFAULT` profile mints tokens OKE rejects —
+see Prerequisites). Every `kubectl --context <ctx> ...` command below uses the
+context this created.
+
+## Accessing the ArgoCD UI (port-forward only)
+
+The ArgoCD UI/API is **not exposed publicly** — no Gateway, HTTPRoute, Ingress,
+or public LoadBalancer fronts it, and the `argocd-server` Service stays
+`ClusterIP`. Reach it locally instead:
 
 ```sh
 kubectl --context <ctx> -n argocd port-forward svc/argocd-server 8080:80
@@ -150,7 +210,7 @@ kubectl --context <ctx> -n argocd get secret argocd-initial-admin-secret \
 ## OKE node-cycle / upgrade runbook
 
 OKE node pools are cycled manually, one node at a time, to pick up a new
-Kubernetes version or node image without an outage (R32):
+Kubernetes version or node image without an outage:
 
 1. `kubectl --context <ctx> cordon <node>` the node being replaced, then
    `kubectl --context <ctx> drain <node> --ignore-daemonsets --delete-emptydir-data`.
@@ -168,11 +228,11 @@ Kubernetes version or node image without an outage (R32):
 
 ## Security
 
-- `.gitignore` is a security control (ADR 0003), not a convenience: it
-  excludes Terraform state (`*.tfstate*`, `.terraform/`), tfvars
-  (`*.tfvars`, `*.auto.tfvars`), OCI API key material (`*.pem`,
-  `oci_api_key*`), local backend config (`*.tfbackend`), and kubeconfig.
-  Verify it with `scripts/check-gitignore-control.sh`.
+- `.gitignore` is a security control, not a convenience: it excludes Terraform
+  state (`*.tfstate*`, `.terraform/`), tfvars (`*.tfvars`, `*.auto.tfvars`),
+  OCI API key material (`*.pem`, `oci_api_key*`), local backend config
+  (`*.tfbackend`), and kubeconfig. Verify it with
+  `scripts/check-gitignore-control.sh`.
 - Region and all OCI credentials are supplied via variables/environment —
   never committed. `terraform/terraform.tfvars.example` holds only
   placeholders.

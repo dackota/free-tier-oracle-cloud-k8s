@@ -46,6 +46,14 @@ terraform {
     skip_credentials_validation = true
     skip_metadata_api_check     = true
 
+    # Newer AWS SDKs (bundled since TF ~1.11) compute a flexible checksum on
+    # PutObject, which forces `Content-Encoding: aws-chunked`. OCI Object
+    # Storage rejects that with `501 NotImplemented: AWS chunked encoding not
+    # supported`, so disable the checksum for state uploads. The
+    # AWS_REQUEST_CHECKSUM_CALCULATION env var does NOT help — the backend sets
+    # the SDK's checksum mode explicitly unless this flag is set.
+    skip_s3_checksum = true
+
     # OCI's S3-compat endpoint doesn't implement AWS STS, which the backend
     # otherwise uses to resolve the caller's account ID.
     skip_requesting_account_id = true

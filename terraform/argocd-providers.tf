@@ -42,6 +42,23 @@ locals {
   # Shared across both providers below so the exec invocation can't
   # drift between them.
   argocd_exec_args = ["ce", "cluster", "generate-token", "--cluster-id", oci_containerengine_cluster.main.id, "--region", var.region]
+
+  # The exec runs the `oci` CLI, which does NOT read the OCI provider's config
+  # above — left to its own devices it falls back to ~/.oci/config's DEFAULT
+  # profile. If that profile is a session-token profile (or a different API
+  # key), `generate-token` mints a token OKE rejects, and the helm/kubectl
+  # providers fail with a bare "Kubernetes cluster unreachable: the server has
+  # asked for the client to provide credentials" (a 401, surfaced by helm as
+  # the generic "installation failed"). Pin the exec to the SAME api-key
+  # identity the oci provider uses so token auth can't drift from resource auth.
+  argocd_exec_env = {
+    OCI_CLI_AUTH        = "api_key"
+    OCI_CLI_TENANCY     = var.tenancy_ocid
+    OCI_CLI_USER        = var.user_ocid
+    OCI_CLI_FINGERPRINT = var.fingerprint
+    OCI_CLI_KEY_FILE    = var.private_key_path
+    OCI_CLI_REGION      = var.region
+  }
 }
 
 # helm provider v3 schema: Kubernetes connection settings live under a
@@ -58,6 +75,7 @@ provider "helm" {
       api_version = "client.authentication.k8s.io/v1beta1"
       command     = "oci"
       args        = local.argocd_exec_args
+      env         = local.argocd_exec_env
     }
   }
 }
@@ -77,5 +95,6 @@ provider "kubectl" {
     api_version = "client.authentication.k8s.io/v1beta1"
     command     = "oci"
     args        = local.argocd_exec_args
+    env         = local.argocd_exec_env
   }
 }
