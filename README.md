@@ -150,11 +150,36 @@ and no child Applications appear.
 
 ## Connecting to the cluster
 
-`terraform apply` creates the OKE cluster but does **not** write a kubeconfig.
-Generate one with the OCI CLI (the same tool the providers use for their
-in-apply auth — see Prerequisites). First get the cluster OCID, from the OCI
-Console (Developer Services → Kubernetes Clusters → your cluster → **Access
-Cluster**, which also prints these exact commands) or from the CLI:
+`terraform apply` creates the OKE cluster but does **not** write a kubeconfig —
+you generate one with the OCI CLI. Both that step and every later `kubectl`
+call ultimately exec `oci ce cluster generate-token`, so the CLI's `DEFAULT`
+profile must use **API-key** auth. A session-token profile (from
+`oci session authenticate`) mints tokens OKE rejects with
+`the server has asked for the client to provide credentials`.
+
+`~/.oci/config`'s `DEFAULT` profile should be a plain API-key profile — the
+same key you use for `TF_VAR_*`, and crucially **no `security_token_file`
+line**:
+
+```ini
+[DEFAULT]
+user=ocid1.user.oc1..xxxxxxxx
+tenancy=ocid1.tenancy.oc1..xxxxxxxx
+fingerprint=aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99
+key_file=~/.oci/oci_api_key.pem
+region=us-ashburn-1
+```
+
+Create it with `oci setup config` (choose API-key auth), or write the file
+directly. If `oci session authenticate` was ever run, it moves your API-key
+profile to `[DEFAULTBACKUP]` and replaces `[DEFAULT]` with a `security_token_file`
+one — restore the API-key values under `[DEFAULT]` and drop that line, or the
+CLI signs with the (rejected) session token. Verify with `oci os ns get`, which
+should print your Object Storage namespace.
+
+Then get the cluster OCID — from the OCI Console (Developer Services →
+Kubernetes Clusters → your cluster → **Access Cluster**, which also prints
+these exact commands) or from the CLI:
 
 ```sh
 oci ce cluster list \
@@ -163,7 +188,7 @@ oci ce cluster list \
   --query 'data[0].id' --raw-output
 ```
 
-Then write a kubeconfig for it and point kubectl at the public endpoint:
+Write a kubeconfig for it and point kubectl at the public endpoint:
 
 ```sh
 oci ce cluster create-kubeconfig \
@@ -177,11 +202,7 @@ kubectl config get-contexts                # note the generated context name
 kubectl --context <ctx> get nodes          # expect 2 A1 nodes, STATUS Ready
 ```
 
-The generated kubeconfig authenticates every call by exec'ing
-`oci ce cluster generate-token`, so the OCI CLI must stay configured with
-**API-key** auth (a session-token `DEFAULT` profile mints tokens OKE rejects —
-see Prerequisites). Every `kubectl --context <ctx> ...` command below uses the
-context this created.
+Every `kubectl --context <ctx> ...` command below uses the context this created.
 
 ## Accessing the ArgoCD UI (port-forward only)
 
