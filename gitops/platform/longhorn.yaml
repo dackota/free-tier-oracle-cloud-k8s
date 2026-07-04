@@ -1,0 +1,52 @@
+# Longhorn as the default StorageClass (R25 / ADR 0002): distributed block
+# storage that replicates over each node's LOCAL filesystem
+# (defaultSettings.defaultDataPath, unset here so it takes the chart's own
+# default of /var/lib/longhorn on the node) instead of provisioning OCI CSI
+# block volumes. Nothing below points at a cloud-backed disk or backup
+# target — no value here can create a new OCI block volume.
+#
+# FREE-TIER TRIPWIRE: OKE ships an `oci-bv` StorageClass (OCI CSI driver)
+# already marked `storageclass.kubernetes.io/is-default-class`. Marking
+# Longhorn's StorageClass default too means the cluster will briefly have
+# two "default" StorageClasses — that conflict is resolved live, once, in
+# the `live-standup-and-verify` HITL slice (operator un-defaults `oci-bv`
+# with `kubectl patch`). `oci-bv` is an OKE-provided object, not
+# git-sourced, so it is intentionally NOT managed from this repo.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: longhorn
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.longhorn.io
+    chart: longhorn
+    targetRevision: "1.12.0" # pinned — latest stable release
+    helm:
+      valuesObject:
+        persistence:
+          # R25: Longhorn's StorageClass becomes the (eventual, post-standup)
+          # cluster default, at the required 2-replica count — see the
+          # tripwire note above for the `oci-bv` handoff.
+          defaultClass: true
+          defaultClassReplicaCount: 2
+
+        # Every Longhorn component (manager, driver-deployer, instance-
+        # manager, CSI sidecars, UI) is left at chart defaults: no requests
+        # set upstream, which is already the modest footprint this 4 OCPU /
+        # 24 GB free-tier cluster needs — no reason to override with
+        # speculative sizing. The UI Service also defaults to ClusterIP (no
+        # extra LoadBalancer, staying inside the single free-tier LB limit).
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: longhorn-system
+  # No repository-credential Secret (R20/ADR 0003) — the Longhorn chart repo
+  # is public, pulled anonymously like every other add-on source.
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
