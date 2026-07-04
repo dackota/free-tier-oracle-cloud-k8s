@@ -3,8 +3,10 @@
 # podinfo Service in `proof-app`. Gateway API refuses cross-namespace
 # references without an explicit grant from the TARGET namespace, so this
 # lives here in proof-app (not traefik) naming the traefik-ns HTTPRoute as
-# the sole authorized referrer -- scoped tightly, it does not open proof-app
-# up to every route in the cluster.
+# the sole authorized referrer. Scoped to least privilege on BOTH axes: the
+# `from` names the one HTTPRoute source ns/kind, and the `to` names the one
+# Service (`proof-app-podinfo`) -- not every Service in proof-app -- so a
+# future route in traefik cannot use this grant to reach any other Service.
 apiVersion: gateway.networking.k8s.io/v1beta1
 kind: ReferenceGrant
 metadata:
@@ -18,3 +20,4 @@ spec:
   to:
     - group: ""
       kind: Service
+      name: proof-app-podinfo
