@@ -1,7 +1,5 @@
-# PLACEHOLDER — this is a public repo; no real PII is committed (ADR 0003).
-# Lifting the ACME email into a value (vs. hardcoding it in the manifest as the
-# pre-migration cert-manager-cluster-issuer.yaml did) is the one behavioural
-# gain of making the issuers a chart: set your real address here (or via a
-# values overlay kept out of git) before the live standup. Let's Encrypt only
-# uses it for expiry/revocation notices.
-acmeEmail: admin@example.com
+# ACME account email for the Let's Encrypt ClusterIssuers. This is a public
+# repo, so this address is public too — Let's Encrypt uses it only for expiry
+# and revocation notices. Change it to your own before standing up a cluster
+# (a values overlay kept out of git works too, if you'd rather not commit it).
+acmeEmail: hello@dackota.com

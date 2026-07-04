@@ -5,6 +5,14 @@
 # OKE's default; the two-defaults conflict is resolved once, live, in the
 # live-standup-and-verify HITL slice.
 longhorn:
+  # Disable the pre-upgrade hook Job. It carries `helm.sh/hook: pre-upgrade`,
+  # which ArgoCD runs as a PreSync hook even on a fresh install — but the Job
+  # sets serviceAccountName: longhorn-service-account, a normal resource created
+  # later in the main sync. So the hook can never start ("serviceaccount
+  # longhorn-service-account not found"), hits its activeDeadline, and deadlocks
+  # the whole Application. There's nothing to pre-check on a first install.
+  preUpgradeChecker:
+    jobEnabled: false
   persistence:
     defaultClass: true
     defaultClassReplicaCount: 2
