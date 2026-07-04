@@ -9,15 +9,13 @@ podinfo:
       cpu: 10m
       memory: 32Mi
 
-# The LB's public IP is unknown until the cluster is live (it's provisioned by
-# the OCI cloud-controller-manager against the Traefik Service, not Terraform).
-# This is an RFC-5737 TEST-NET-3 placeholder (ADR 0003, no real data committed)
-# -- the live-standup-and-verify slice overrides it with the real LB IP via a
-# values overlay. Single source of truth for the proof app's sslip.io
-# hostname (R28): templates/_helpers.tpl derives `proof.<lbPublicIp>.sslip.io`
-# from this value alone, so the HTTPRoute hostname and the Certificate
-# dnsNames (which both call that helper) can never drift apart.
-lbPublicIp: 203.0.113.10
+# Base domain for this cluster's public hostnames. The proof app is served at
+# `proof.<baseDomain>`: templates/_helpers.tpl derives that single hostname, and
+# both the HTTPRoute (routing) and the Certificate (dnsNames) call the helper,
+# so they can never drift apart. Requires a DNS record for that name — a
+# wildcard `*.<baseDomain>` A record pointing at the Traefik LoadBalancer's
+# public IP works — so Let's Encrypt's HTTP-01 challenge can validate.
+baseDomain: dackota.com
 
 # R29 wants a browser-trusted cert, so default to the production Let's Encrypt
 # ClusterIssuer. During first live bring-up the operator may temporarily set
