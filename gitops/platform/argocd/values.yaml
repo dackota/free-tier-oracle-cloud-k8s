@@ -1,7 +1,7 @@
 # VALUES-SYNC CONTRACT (R17<->R22, ADR 0005) — read before touching either side:
 # everything under `argo-cd:` below MUST stay identical to
 # local.argocd_helm_values in terraform/argocd.tf, and the dependency version
-# in Chart.yaml (10.1.1) MUST match helm_release.argocd's version. ArgoCD's
+# in Chart.yaml (10.1.2) MUST match helm_release.argocd's version. ArgoCD's
 # first sync of this self-management Application diffs against the Helm release
 # Terraform already installed; if the values or version differ, that first
 # sync becomes a real upgrade instead of a no-op — and an upgrade that changes
@@ -10,20 +10,21 @@
 #
 # Because argo-cd is a *subchart* here, the values move under the `argo-cd:`
 # key, and the render must be proven equivalent: `helm template argocd .` must
-# diff empty against `helm template argocd argo-cd/argo-cd --version 10.1.1
+# diff empty against `helm template argocd argo-cd/argo-cd --version 10.1.2
 # -f <terraform values>`. Change one side, change the other in the same commit.
 argo-cd:
   configs:
-    cm:
+    params:
       # Server-side diff: ArgoCD computes drift via a server-side dry-run apply,
       # so fields that admission webhooks/controllers default or mutate (the
       # Gateway API webhook on Gateway/HTTPRoute, cert-manager on ClusterIssuer)
       # are reflected in the desired state instead of showing as perpetual
-      # OutOfSync. Pairs with the ServerSideApply sync option the ApplicationSets
-      # already set (that governs how resources are applied; this governs how
-      # drift is computed).
+      # OutOfSync. This is a controller command param — it must live in
+      # argocd-cmd-params-cm (configs.params), NOT argocd-cm; the controller
+      # reads ARGOCD_APPLICATION_CONTROLLER_SERVER_SIDE_DIFF from this key only.
+      # Complements the ApplicationSets' ServerSideApply sync option (that
+      # governs how resources are applied; this governs how drift is computed).
       controller.diff.server.side: "true"
-    params:
       # No TLS on the Service; acceptable because the UI/API is reached only
       # via `kubectl port-forward` (see README.md), never a public
       # LoadBalancer/Ingress (R31).

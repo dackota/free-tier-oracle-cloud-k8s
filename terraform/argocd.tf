@@ -16,17 +16,17 @@
 locals {
   argocd_helm_values = {
     configs = {
-      cm = {
+      params = {
         # Server-side diff: ArgoCD computes drift via a server-side dry-run apply,
         # so fields that admission webhooks/controllers default or mutate (the
         # Gateway API webhook on Gateway/HTTPRoute, cert-manager on ClusterIssuer)
         # are reflected in the desired state instead of showing as perpetual
-        # OutOfSync. Pairs with the ServerSideApply sync option the ApplicationSets
-        # already set (that governs how resources are applied; this governs how
-        # drift is computed).
+        # OutOfSync. This is a controller command param — it must live in
+        # argocd-cmd-params-cm (configs.params), NOT argocd-cm; the controller
+        # reads ARGOCD_APPLICATION_CONTROLLER_SERVER_SIDE_DIFF from this key only.
+        # Complements the ApplicationSets' ServerSideApply sync option (that
+        # governs how resources are applied; this governs how drift is computed).
         "controller.diff.server.side" = "true"
-      }
-      params = {
         # No TLS on the Service; acceptable because the UI/API is reached
         # only via `kubectl port-forward` (see README.md), never a public
         # LoadBalancer/Ingress (R31).
@@ -97,7 +97,7 @@ resource "helm_release" "argocd" {
   name             = "argocd"
   repository       = "https://argoproj.github.io/argo-helm"
   chart            = "argo-cd"
-  version          = "10.1.1" # pinned — see the values-sync contract above
+  version          = "10.1.2" # pinned — see the values-sync contract above
   namespace        = "argocd"
   create_namespace = true
 
