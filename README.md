@@ -1,7 +1,7 @@
 # free-tier-oracle-cloud-k8s
 
-A single-operator, long-lived Kubernetes homelab running on Oracle Cloud's
-Always Free tier: provisioned with Terraform and managed by ArgoCD via GitOps.
+A Kubernetes homelab running on Oracle Cloud's Always Free tier: 
+provisioned with Terraform and managed by ArgoCD via GitOps.
 
 `terraform apply` builds the OKE cluster and its network, then hands ongoing
 reconciliation to ArgoCD (the **Bootstrap** step). From there, adding or
@@ -20,11 +20,6 @@ gitops/
               cert-manager, Longhorn, metrics-server, ArgoCD self-management.
   workloads/  User applications, managed by ArgoCD like everything else here.
 ```
-
-This repo is **public** and contains **no plaintext secrets** — Terraform
-state, credentials, and kubeconfig all live outside git. See `.gitignore`,
-which enforces that boundary, and `scripts/check-gitignore-control.sh`, which
-verifies it.
 
 ## Prerequisites
 
@@ -97,8 +92,8 @@ export TF_VAR_region="us-ashburn-1"          # tenancy's home region; required, 
 export TF_VAR_compartment_ocid="ocid1.compartment.oc1..xxxxxxxx"
 
 # Backend auth (the Customer Secret Key from backend provisioning above).
-export AWS_ACCESS_KEY_ID="<customer-secret-key-access-key>"
-export AWS_SECRET_ACCESS_KEY="<customer-secret-key-secret-key>"
+export AWS_ACCESS_KEY_ID="<customer-secret-access-key-id>"
+export AWS_SECRET_ACCESS_KEY="<customer-secret-key>"
 
 # Required for every plan/apply. Newer AWS SDKs default to computing a flexible
 # checksum on PutObject, which forces `Content-Encoding: aws-chunked`. OCI Object
