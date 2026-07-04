@@ -1,0 +1,78 @@
+# Platform add-ons ApplicationSet (ADR 0005) — replaces the gitops/platform
+# app-of-apps. A git *files* generator discovers every add-on by its
+# config.yaml (gitops/platform/*/config.yaml) and templates one ArgoCD
+# Application per add-on. Each add-on directory is a self-contained Helm chart:
+# a thin wrapper over an upstream chart (argocd, traefik, cert-manager,
+# longhorn, metrics-server) or a local chart of vendored manifests
+# (gateway-api-crds, cluster-issuers). The shared Application boilerplate —
+# project, destination server, syncPolicy, syncOptions, and the
+# no-repo-credential posture (ADR 0003) — lives here once instead of being
+# copy-pasted into seven manifests.
+#
+# NO SYNC WAVES (ADR 0005, revises ADR 0004): the Gateway-API-CRDs -> Traefik/
+# cert-manager and cert-manager-CRDs -> ClusterIssuers ordering converges via
+# ArgoCD's automated retry + selfHeal rather than explicit waves. A dependent
+# Application whose CRD kind isn't Established yet fails its first sync and
+# retries until the CRD lands.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: platform
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/dackota/free-tier-oracle-cloud-k8s.git
+        revision: HEAD
+        files:
+          - path: gitops/platform/*/config.yaml
+  template:
+    metadata:
+      name: '{{.path.basename}}'
+      namespace: argocd
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/dackota/free-tier-oracle-cloud-k8s.git
+        targetRevision: HEAD
+        # The add-on directory (a self-contained Helm chart). releaseName is
+        # the add-on name — load-bearing for the argocd add-on, whose subchart
+        # must render under release "argocd" to match helm_release.argocd
+        # (the R17<->R22 no-op).
+        path: '{{.path.path}}'
+        helm:
+          releaseName: '{{.path.basename}}'
+          valueFiles:
+            - values.yaml
+          ignoreMissingValueFiles: true
+      destination:
+        server: https://kubernetes.default.svc
+        # config.yaml carries the target namespace; falls back to the add-on
+        # (directory) name if omitted.
+        namespace: '{{dig "namespace" .path.basename .}}'
+      # ADR 0003: no repository-credential Secret — this public repo and the
+      # vendored upstream charts inside each add-on dir are pulled anonymously.
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        # ADR 0005 drops sync-waves and lets ArgoCD reconciliation converge the
+        # cross-add-on CRD ordering (Gateway API CRDs -> Traefik/cert-manager;
+        # cert-manager CRDs -> ClusterIssuers). This retry gives that a fast
+        # exponential backoff (5s..3m) so a dependent add-on whose CRD isn't yet
+        # Established on its first sync recovers in seconds, not on the next
+        # full application-resync (~minutes).
+        retry:
+          limit: 10
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+        syncOptions:
+          - CreateNamespace=true
+          # Required, not just conventional: the Gateway API CRD schemas are
+          # large enough that client-side apply's last-applied-configuration
+          # annotation exceeds the Kubernetes annotation size limit.
+          - ServerSideApply=true

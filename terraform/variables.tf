@@ -50,14 +50,13 @@ variable "bastion_allowed_cidr_blocks" {
 
 # Bootstrap (R18/R20): the public GitOps repo the bootstrap ArgoCD
 # Application pulls from. A variable, not a literal, so a fork of this repo
-# only has to override one value instead of hunting it down inline. The child
-# Applications committed under gitops/bootstrap/ (platform.yaml,
-# workloads.yaml) and gitops/platform/argocd.yaml still hardcode this same
-# URL literally — they're plain YAML ArgoCD reads as-is, with no Terraform
-# templating, so a variable can't reach them; keep those in sync by hand if
-# this default ever changes. Defaults to this project's own repo; anonymous
-# HTTPS, no repository credential is ever created (R20/ADR 0003 — the repo is
-# public).
+# only has to override one value instead of hunting it down inline. The
+# ApplicationSets under applicationsets/ (platform.yaml, workloads.yaml) still
+# hardcode this same URL literally in their git generator + template source —
+# they're plain YAML ArgoCD reads as-is, with no Terraform templating, so a
+# variable can't reach them; keep those in sync by hand if this default ever
+# changes. Defaults to this project's own repo; anonymous HTTPS, no repository
+# credential is ever created (R20/ADR 0003 — the repo is public).
 variable "gitops_repo_url" {
   description = "HTTPS URL of the public GitOps repo the bootstrap ArgoCD Application pulls from. Pulled anonymously — no repository-credential Secret (R20)."
   type        = string

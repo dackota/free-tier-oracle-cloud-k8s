@@ -1,0 +1,3 @@
+# ClusterIssuers are cluster-scoped; this namespace is a no-op for them. Set to
+# cert-manager (where the ACME account-key Secrets are stored by the controller).
+namespace: cert-manager

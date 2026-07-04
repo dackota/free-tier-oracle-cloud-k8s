@@ -1,0 +1,5 @@
+apiVersion: v2
+name: cluster-issuers
+description: Let's Encrypt ClusterIssuers (R24) — local chart, HTTP-01 via Gateway API
+type: application
+version: 0.1.0

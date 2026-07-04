@@ -1,0 +1,33 @@
+# cert-manager (R24), values under the `cert-manager:` subchart key.
+cert-manager:
+  # Install the CRDs with this release and keep them if the release is ever
+  # removed — losing them would cascade-delete every issued cert's Secret.
+  crds:
+    enabled: true
+    keep: true
+
+  # Gateway API integration: `config.enableGatewayAPI: true` is the actual
+  # switch (the ExperimentalGatewayAPISupport feature-gate defaults true since
+  # chart v1.20.0). It emits a ControllerConfiguration ConfigMap and wires the
+  # gateway.networking.k8s.io watches the HTTP01 gatewayHTTPRoute solver needs.
+  config:
+    apiVersion: controller.config.cert-manager.io/v1alpha1
+    kind: ControllerConfiguration
+    enableGatewayAPI: true
+
+  # Homelab-sized requests across the three controllers (controller, webhook,
+  # cainjector) on the 4 OCPU / 24 GB free-tier cluster.
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+  webhook:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+  cainjector:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi

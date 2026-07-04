@@ -1,0 +1,56 @@
+# VALUES-SYNC CONTRACT (R17<->R22, ADR 0005) — read before touching either side:
+# everything under `argo-cd:` below MUST stay identical to
+# local.argocd_helm_values in terraform/argocd.tf, and the dependency version
+# in Chart.yaml (10.1.1) MUST match helm_release.argocd's version. ArgoCD's
+# first sync of this self-management Application diffs against the Helm release
+# Terraform already installed; if the values or version differ, that first
+# sync becomes a real upgrade instead of a no-op — and an upgrade that changes
+# an immutable Deployment label selector orphans the old ReplicaSet's pods
+# (a documented scar from the reference EKS setup this project ported from).
+#
+# Because argo-cd is a *subchart* here, the values move under the `argo-cd:`
+# key, and the render must be proven equivalent: `helm template argocd .` must
+# diff empty against `helm template argocd argo-cd/argo-cd --version 10.1.1
+# -f <terraform values>`. Change one side, change the other in the same commit.
+argo-cd:
+  configs:
+    params:
+      # No TLS on the Service; acceptable because the UI/API is reached only
+      # via `kubectl port-forward` (see README.md), never a public
+      # LoadBalancer/Ingress (R31).
+      server.insecure: "true"
+
+  # No SSO/dex/Okta in v1 — disable dex-server entirely rather than run an idle
+  # pod on a 4 OCPU / 24 GB cluster.
+  dex:
+    enabled: false
+
+  # No notification channels configured in v1 — skip the controller to keep the
+  # footprint small.
+  notifications:
+    enabled: false
+
+  # Modest, homelab-sized requests: this cluster is the full Always Free A1
+  # allowance (4 OCPU / 24 GB across 2 nodes), shared with every workload
+  # ArgoCD goes on to manage.
+  controller:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+  server:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+  repoServer:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+  applicationSet:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi

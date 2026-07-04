@@ -1,0 +1,3 @@
+# CRDs are cluster-scoped, so this namespace is a no-op for the applied
+# resources; set to argocd for consistency with the other platform add-ons.
+namespace: argocd
