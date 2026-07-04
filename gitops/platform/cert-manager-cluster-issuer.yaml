@@ -1,0 +1,77 @@
+# Let's Encrypt ClusterIssuers (R24): the HTTP-01 solver routes the ACME
+# challenge through the Gateway API — cert-manager creates an HTTPRoute
+# attached to the shared Gateway rather than using the legacy Ingress solver
+# — so the certificate it issues terminates at that Gateway's HTTPS listener
+# (`spec.acme.solvers[].http01.gatewayHTTPRoute`, not `.ingress`).
+#
+# SOFT REFERENCE, NOT A BUILD-TIME DEPENDENCY: the shared Gateway is created
+# by the sibling gateway-routing-traefik slice (R23/R33). Both slices are
+# blocked only by argocd-bootstrap and built in parallel; this manifest
+# references that Gateway by name/namespace only (`parentRefs` below) — it
+# does not create or require the Gateway to exist for THIS file to render or
+# validate. The referent `name: traefik-gateway` / `namespace: traefik` is
+# reconciled against what gateway-routing-traefik's Traefik chart actually
+# renders (the chart's `gateway.enabled` emits a Gateway named
+# `traefik-gateway` in the `traefik` namespace). Both PRs can land in either
+# order — a wrong name would be a runtime no-op for the solver, not a
+# render/schema failure, since ClusterIssuer has no admission webhook
+# validating the referent exists.
+#
+# SYNC WAVE: cert-manager.yaml (the Application that installs the
+# cert-manager.io CRDs, including ClusterIssuer) carries no
+# `argocd.argoproj.io/sync-wave` annotation, so it defaults to wave "0". Both
+# ClusterIssuers here are wave "1" so the `platform` app-of-apps
+# (gitops/bootstrap/platform.yaml) applies them only after the cert-manager
+# Application is synced/healthy and its CRDs actually exist on a fresh
+# cluster — the same CRD-before-consumer ordering R33 calls out for the
+# Gateway API CRDs vs. Traefik/Gateway.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  acme:
+    # Production Let's Encrypt endpoint (R29 wants a browser-trusted cert).
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # PLACEHOLDER — this is a public repo; no real PII is committed (ADR
+    # 0003). GitOps manifests have no Terraform-variable mechanism to inject
+    # this at apply time, so set your real address here (or via a
+    # kustomize/patch overlay you keep out of git) before applying live.
+    # Let's Encrypt only uses it for expiry/revocation notices.
+    email: admin@example.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          gatewayHTTPRoute:
+            parentRefs:
+              - name: traefik-gateway
+                namespace: traefik
+                kind: Gateway
+---
+# Staging issuer, kept alongside prod so bring-up (proof-app, R27-R29) can
+# point Certificates here first to dodge Let's Encrypt's production rate
+# limits while the HTTP-01-through-HTTPRoute path is being proven, then
+# switch to letsencrypt-prod once it works end-to-end.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    # Same placeholder-email note as letsencrypt-prod above.
+    email: admin@example.com
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          gatewayHTTPRoute:
+            parentRefs:
+              - name: traefik-gateway
+                namespace: traefik
+                kind: Gateway
