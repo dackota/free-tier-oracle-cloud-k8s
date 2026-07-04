@@ -1,0 +1,54 @@
+# Workloads ApplicationSet (ADR 0005) — replaces the gitops/workloads
+# app-of-apps. Same git-files-generator shape as platform.yaml, globbing
+# gitops/workloads/*/config.yaml. Generates zero Applications today (the
+# workloads layer is empty); the proof app (R27-R29) lands as
+# gitops/workloads/proof-app/ — a chart dir with a config.yaml — and is picked
+# up automatically with no change here.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: workloads
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/dackota/free-tier-oracle-cloud-k8s.git
+        revision: HEAD
+        files:
+          - path: gitops/workloads/*/config.yaml
+  template:
+    metadata:
+      name: '{{.path.basename}}'
+      namespace: argocd
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/dackota/free-tier-oracle-cloud-k8s.git
+        targetRevision: HEAD
+        path: '{{.path.path}}'
+        helm:
+          releaseName: '{{.path.basename}}'
+          valueFiles:
+            - values.yaml
+          ignoreMissingValueFiles: true
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{dig "namespace" .path.basename .}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        # Fast retry backoff matching the platform ApplicationSet (ADR 0005) —
+        # a workload may likewise reference a platform CRD/Gateway not yet
+        # reconciled on its first sync.
+        retry:
+          limit: 10
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true

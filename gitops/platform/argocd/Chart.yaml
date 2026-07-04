@@ -1,0 +1,11 @@
+apiVersion: v2
+name: argocd
+description: ArgoCD self-management (R22) — thin wrapper over the upstream argo-cd chart
+type: application
+version: 0.1.0
+# VALUES-SYNC CONTRACT (R17<->R22, ADR 0005): this dependency version MUST
+# match helm_release.argocd's version in terraform/argocd.tf. See values.yaml.
+dependencies:
+  - name: argo-cd
+    version: 10.1.1
+    repository: https://argoproj.github.io/argo-helm

@@ -1,0 +1,12 @@
+apiVersion: v2
+name: gateway-api-crds
+description: Gateway API v1.6.0 standard-channel Custom Resource Definitions (R33)
+type: application
+version: 1.6.0
+appVersion: "1.6.0"
+# Local chart, no dependencies: templates/gateway-api-crds.yaml is the vendored
+# upstream standard-install.yaml bundle (kubernetes-sigs/gateway-api v1.6.0).
+# Kept under templates/ (not crds/) so ArgoCD fully reconciles and prunes the
+# CRDs like any managed resource; the ApplicationSet's shared ServerSideApply
+# syncOption handles their large schemas. Bumping the CRDs = replace this file
+# from the new release tag and bump version/appVersion above.

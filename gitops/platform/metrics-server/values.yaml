@@ -1,0 +1,13 @@
+# metrics-server (R26), values under the `metrics-server:` subchart key.
+# OKE kubelet-TLS scar: the kubelet serving cert isn't signed by a CA
+# metrics-server trusts, so the :10250 scrape fails x509 and the Metrics API
+# never reports Ready. The documented fix is --kubelet-insecure-tls. The chart
+# renders `defaultArgs` and `args` as separate appended blocks, so this adds to
+# the baked-in defaults (which already include the preferred-address-types).
+metrics-server:
+  args:
+    - --kubelet-insecure-tls
+  resources:
+    requests:
+      cpu: 100m
+      memory: 200Mi

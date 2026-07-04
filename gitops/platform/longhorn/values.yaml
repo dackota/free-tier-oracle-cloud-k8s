@@ -1,0 +1,10 @@
+# Longhorn (R25, ADR 0002), values under the `longhorn:` subchart key.
+# Node-local distributed block storage (replicates over each node's local
+# filesystem; defaultDataPath left at the chart default /var/lib/longhorn) — no
+# value here provisions an OCI block volume. The oci-bv StorageClass ships as
+# OKE's default; the two-defaults conflict is resolved once, live, in the
+# live-standup-and-verify HITL slice.
+longhorn:
+  persistence:
+    defaultClass: true
+    defaultClassReplicaCount: 2

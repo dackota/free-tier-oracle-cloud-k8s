@@ -118,13 +118,15 @@ DynamoDB equivalent), only run `plan`/`apply` from one place at a time.
 
 The same apply also runs the **Bootstrap** step (R17-R22): it installs ArgoCD
 via `helm_release` and applies a single bootstrap ArgoCD Application pointing
-at `gitops/bootstrap` in this repo (pulled anonymously over public HTTPS — no
-repository credential, R20). From there, ArgoCD reconciles `gitops/platform/`
-(including managing its own Helm release, R22) and `gitops/workloads/` from
-git — adding a platform add-on or a workload is a commit under `gitops/`, not
-a second `terraform apply` (R21). `terraform/variables.tf`'s
-`gitops_repo_url` defaults to this repo's own URL; override it if you're
-running from a fork.
+at `applicationsets/` in this repo (pulled anonymously over public HTTPS — no
+repository credential, R20). That directory holds two ApplicationSets
+(`platform.yaml`, `workloads.yaml`); each uses a `*/config.yaml` git-files
+generator to discover the per-add-on / per-workload chart directories under
+`gitops/platform/` and `gitops/workloads/` and generates one ArgoCD Application
+apiece — including ArgoCD managing its own Helm release (R22). Adding a platform
+add-on or a workload is a new chart directory committed under `gitops/`, not a
+second `terraform apply` (R21). `terraform/variables.tf`'s `gitops_repo_url`
+defaults to this repo's own URL; override it if you're running from a fork.
 
 ## Accessing the ArgoCD UI (v1: port-forward only)
 
