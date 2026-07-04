@@ -1,0 +1,20 @@
+# ReferenceGrant authorizing the cross-namespace backendRef in
+# templates/httproute.yaml: an HTTPRoute in `traefik` pointing at the
+# podinfo Service in `proof-app`. Gateway API refuses cross-namespace
+# references without an explicit grant from the TARGET namespace, so this
+# lives here in proof-app (not traefik) naming the traefik-ns HTTPRoute as
+# the sole authorized referrer -- scoped tightly, it does not open proof-app
+# up to every route in the cluster.
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: traefik-httproute-to-podinfo
+  namespace: proof-app
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: traefik
+  to:
+    - group: ""
+      kind: Service

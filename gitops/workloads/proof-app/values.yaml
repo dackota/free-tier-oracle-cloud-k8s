@@ -1,0 +1,27 @@
+# proof-app (R27-R29): the single v1 proof workload validating the full
+# git -> ArgoCD -> Gateway -> live HTTPS path. podinfo values nest under the
+# `podinfo:` subchart key (same convention as gitops/platform/metrics-server).
+podinfo:
+  # Free-tier-sized requests only, no limits — matches the repo-wide pattern
+  # (see traefik/metrics-server values) on a capacity-constrained homelab node.
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+# The LB's public IP is unknown until the cluster is live (it's provisioned by
+# the OCI cloud-controller-manager against the Traefik Service, not Terraform).
+# This is an RFC-5737 TEST-NET-3 placeholder (ADR 0003, no real data committed)
+# -- the live-standup-and-verify slice overrides it with the real LB IP via a
+# values overlay. Single source of truth for the proof app's sslip.io
+# hostname (R28): templates/_helpers.tpl derives `proof.<lbPublicIp>.sslip.io`
+# from this value alone, so the HTTPRoute hostname and the Certificate
+# dnsNames (which both call that helper) can never drift apart.
+lbPublicIp: 203.0.113.10
+
+# R29 wants a browser-trusted cert, so default to the production Let's Encrypt
+# ClusterIssuer. During first live bring-up the operator may temporarily set
+# `issuer: letsencrypt-staging` (via a values overlay) to dodge Let's Encrypt's
+# production rate limits while proving out the HTTP-01-through-HTTPRoute path,
+# then flip back to letsencrypt-prod once issuance is confirmed working.
+issuer: letsencrypt-prod
