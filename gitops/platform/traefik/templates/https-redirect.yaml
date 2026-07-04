@@ -1,0 +1,26 @@
+# Redirect all plain-HTTP traffic to HTTPS. A catch-all HTTPRoute on the
+# Gateway's `web` (HTTP) listener with a RequestRedirect filter (301 permanent;
+# Gateway API only permits 301 or 302 here). It matches every host and path, so
+# any http:// URL is bounced to https://.
+#
+# ACME stays safe: cert-manager's HTTP-01 solver attaches its own HTTPRoute to
+# the same Gateway with an Exact match on /.well-known/acme-challenge/<token>.
+# Gateway API precedence ranks an Exact match above this route's default
+# PathPrefix "/", so the challenge is served over plain HTTP while everything
+# else redirects — issuance and renewal keep working.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: http-to-https-redirect
+  namespace: {{ .Release.Namespace }}
+spec:
+  parentRefs:
+    - name: traefik-gateway
+      namespace: {{ .Release.Namespace }}
+      sectionName: web
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
