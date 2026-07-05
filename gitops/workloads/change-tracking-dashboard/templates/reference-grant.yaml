@@ -1,0 +1,23 @@
+# ReferenceGrant authorizing the cross-namespace backendRef in
+# templates/httproute.yaml: an HTTPRoute in `traefik` pointing at the dashboard
+# Service in `change-tracking-dashboard`. Gateway API refuses cross-namespace
+# references without an explicit grant from the TARGET namespace, so this lives
+# here in change-tracking-dashboard (not traefik), naming the traefik-ns
+# HTTPRoute as the sole authorized referrer. Scoped to least privilege on BOTH
+# axes: `from` names the one HTTPRoute source ns/kind, and `to` names the one
+# Service (`change-tracking-dashboard`) — so a future route in traefik cannot use
+# this grant to reach any other Service in this namespace.
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: traefik-httproute-to-change-tracking-dashboard
+  namespace: change-tracking-dashboard
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: traefik
+  to:
+    - group: ""
+      kind: Service
+      name: change-tracking-dashboard

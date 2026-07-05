@@ -18,8 +18,12 @@ traefik:
     listeners:
       # HTTP :80 stays a chart default (cert-manager's HTTP-01 challenge solves
       # through an HTTPRoute on it). HTTPS :443 added here for R23;
-      # certificateRefs names the Secret cert-manager populates (proof-app
-      # slice), decoupling routing from the cert-manager rollout.
+      # certificateRefs names the Secret(s) cert-manager populates, decoupling
+      # routing from the cert-manager rollout. Each public workload owns its own
+      # host cert Secret and adds it here; Traefik selects the right one per SNI,
+      # so apps don't fight over a single shared Secret:
+      #   - traefik-gateway-tls            -> proof.<baseDomain>            (proof-app)
+      #   - change-tracking-dashboard-tls  -> changes.<baseDomain>          (change-tracking-dashboard)
       websecure:
         port: 8443
         protocol: HTTPS
@@ -27,6 +31,8 @@ traefik:
         certificateRefs:
           - kind: Secret
             name: traefik-gateway-tls
+          - kind: Secret
+            name: change-tracking-dashboard-tls
   # Data-plane Service stays LoadBalancer (chart default) — provisions the
   # single Always Free OCI LB. Pinned to the flexible shape at the free-tier
   # 10 Mbps cap (a fixed shape is billable; a second LB of any shape exceeds

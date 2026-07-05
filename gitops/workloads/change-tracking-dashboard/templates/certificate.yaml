@@ -1,0 +1,28 @@
+# cert-manager Certificate for the dashboard's HTTPS hostname. Lives in the
+# `traefik` namespace (NOT change-tracking-dashboard) because the shared Gateway
+# resolves its listener `certificateRefs` (gitops/platform/traefik/values.yaml)
+# against the Gateway's OWN namespace (traefik) — a Certificate anywhere else
+# would populate a Secret the Gateway never looks at.
+#
+# This owns its OWN Secret (change-tracking-dashboard-tls), distinct from
+# proof-app's traefik-gateway-tls: the websecure listener lists BOTH secrets in
+# certificateRefs and selects per-SNI, so each app manages its own cert without
+# fighting over a shared Secret. Adding this app therefore also required adding
+# `change-tracking-dashboard-tls` to that listener's certificateRefs.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: change-tracking-dashboard-tls
+  namespace: traefik
+spec:
+  # Must match the Secret name the websecure listener references for this host.
+  secretName: change-tracking-dashboard-tls
+  dnsNames:
+    - {{ include "ctd.host" . }}
+  issuerRef:
+    # letsencrypt-prod by default (browser-trusted); the operator may point this
+    # at letsencrypt-staging during first bring-up to dodge production rate
+    # limits (see values.yaml), then flip back once issuance is proven.
+    name: {{ .Values.issuer }}
+    kind: ClusterIssuer
+    group: cert-manager.io

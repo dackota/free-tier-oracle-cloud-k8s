@@ -1,0 +1,73 @@
+# change-tracking-dashboard workload: polls THIS GitOps repo and serves a
+# faceted change feed at https://changes.<baseDomain>. The app chart is a
+# vendored OCI dependency (Chart.yaml); its values nest under the subchart's
+# name key `change-tracking-dashboard:`. The top-level baseDomain/issuer feed
+# this workload's local Gateway route + Certificate templates (same convention
+# as gitops/workloads/proof-app).
+
+# Base domain for this cluster's public hostnames; served at changes.<baseDomain>.
+# templates/_helpers.tpl derives that hostname, and both the HTTPRoute (routing)
+# and the Certificate (dnsNames) call the helper so they can never drift. Needs a
+# DNS record for that name — the wildcard *.<baseDomain> A record pointing at the
+# Traefik LoadBalancer's public IP (the one proof-app relies on) covers it.
+baseDomain: dackota.com
+
+# Production Let's Encrypt ClusterIssuer for a browser-trusted cert. During
+# first bring-up the operator may temporarily set issuer: letsencrypt-staging
+# (a values overlay) to dodge production rate limits, then flip back.
+issuer: letsencrypt-prod
+
+change-tracking-dashboard:
+  image:
+    # Published by the app repo's Release workflow. tag omitted on purpose: the
+    # chart's image helper defaults it to .Chart.AppVersion, which the workflow
+    # uses as the image tag — so pinning the chart dependency version above pins
+    # the image too.
+    repository: ghcr.io/dackota/change-tracking-dashboard
+
+  # Longhorn provides durable ReadWriteOnce storage on the homelab; the SQLite
+  # change-history DB lives here. The chart pins replicaCount to 1 (RWO PVC).
+  persistence:
+    size: 1Gi
+    storageClassName: longhorn
+    mountPath: /data
+
+  # Free-tier-sized requests, no limits set here beyond the chart defaults —
+  # matches the repo-wide pattern on a capacity-constrained homelab node.
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  # Tracker config (hot-reloaded from the ConfigMap). Poll THIS public GitOps
+  # repo over anonymous HTTPS — no GitHub App secret needed (githubApp.secretName
+  # stays empty). The dashboard clones the remote repo into /tmp (writable
+  # emptyDir in the chart) and walks its history.
+  trackerConfig:
+    defaults:
+      # Homelab cadence: check every 10 minutes; walk 90 days of history on first run.
+      pollIntervalSeconds: 600
+      backfillDays: 90
+    trackers:
+      - repo: https://github.com/dackota/free-tier-oracle-cloud-k8s.git
+        # Facet each Change by GitOps layer (platform|workloads) and component
+        # (the chart dir), so the feed can be filtered by both. Named capture
+        # groups become facet keys.
+        facetRegex: "gitops/(?P<layer>platform|workloads)/(?P<component>[^/]+)/"
+        files:
+          # Vendored chart/subchart versions — the primary thing that changes in
+          # this repo (Dependabot bumps Chart.yaml dependency versions). Keyed map
+          # of dependency name (alias if set, else name) -> version.
+          - glob: "gitops/**/Chart.yaml"
+            fields:
+              - name: chartDependencies
+                expr: '.dependencies | map({(if .alias then .alias else .name end): .version}) | add'
+          # Image tags pinned in values.yaml, keyed by the top-level subchart key
+          # they sit under (e.g. podinfo.image.tag).
+          - glob: "gitops/**/values.yaml"
+            fields:
+              - name: imageTags
+                expr: 'to_entries | map(select(.value.image.tag)) | map({(.key): .value.image.tag}) | add'
