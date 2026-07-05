@@ -61,13 +61,13 @@ change-tracking-dashboard:
           # Vendored chart/subchart versions — the primary thing that changes in
           # this repo (Dependabot bumps Chart.yaml dependency versions). Keyed map
           # of dependency name (alias if set, else name) -> version.
-          - glob: "gitops/**/Chart.yaml"
+          - glob: "gitops/*/*/Chart.yaml"
             fields:
               - name: chartDependencies
                 expr: '.dependencies | map({(if .alias then .alias else .name end): .version}) | add'
           # Image tags pinned in values.yaml, keyed by the top-level subchart key
           # they sit under (e.g. podinfo.image.tag).
-          - glob: "gitops/**/values.yaml"
+          - glob: "gitops/*/*/values.yaml"
             fields:
               - name: imageTags
                 expr: 'to_entries | map(select(.value.image.tag)) | map({(.key): .value.image.tag}) | add'
