@@ -13,5 +13,5 @@ dependencies:
   # keeps it fresh on version bumps). Requires the ghcr chart package to be
   # public (anonymous pull) — see the app repo's post-merge steps.
   - name: change-tracking-dashboard
-    version: 0.1.0
+    version: 0.1.1
     repository: oci://ghcr.io/dackota/charts
