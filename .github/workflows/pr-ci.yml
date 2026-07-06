@@ -46,6 +46,22 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
 
+      - name: Add Helm chart repositories
+        run: |
+          set -euo pipefail
+          # `helm dependency build` resolves a classic (non-OCI) `repository:`
+          # URL against the local repo cache — it errors with "no repository
+          # definition for <url>" unless that URL was registered via
+          # `helm repo add` first, even though Chart.yaml already pins it
+          # explicitly. OCI repositories need no such registration.
+          grep -rhoP '^\s*repository:\s*\K\S+' gitops --include=Chart.yaml \
+            | grep -v '^oci://' \
+            | sort -u \
+            | while IFS= read -r url; do
+                alias="$(echo "$url" | sed -E 's#^https?://##; s#/.*##; s/[^a-zA-Z0-9]+/-/g')"
+                helm repo add "$alias" "$url"
+              done
+
       - name: Install kubeconform (pinned, checksum-verified)
         env:
           KUBECONFORM_VERSION: "0.8.0"
