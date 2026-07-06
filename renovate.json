@@ -19,14 +19,20 @@
       "automerge": true
     },
     {
-      "description": "R27: platform charts are more conservative than leaf workloads -- patch+digest auto-merge only; minor and major stay manual PRs (blast-radius change to shared cluster infra).",
+      "description": "R27: platform charts are more conservative than leaf workloads -- patch+digest auto-merge only; minor and major stay manual PRs (blast-radius change to shared cluster infra). ArgoCD itself is deliberately excluded -- it is the GitOps control plane that self-applies every other chart in this repo via the same prune+selfHeal mechanism, so it stays fully manual regardless of update type (security-reviewed MEDIUM).",
       "matchManagers": ["helmv3"],
-      "matchFileNames": ["gitops/platform/**"],
+      "matchFileNames": [
+        "gitops/platform/cert-manager/**",
+        "gitops/platform/traefik/**",
+        "gitops/platform/longhorn/**",
+        "gitops/platform/metrics-server/**"
+      ],
       "matchUpdateTypes": ["patch", "digest"],
       "automerge": true
     },
     {
       "description": "R26: own-artifact (change-tracking-dashboard chart version + pinned image tag) auto-merges at any level -- including major -- once required checks are green, with no release-age cooldown, so the dashboard's own commit-to-deploy path stays seamless.",
+      "matchManagers": ["helmv3", "custom.regex"],
       "matchFileNames": ["gitops/workloads/change-tracking-dashboard/**"],
       "automerge": true,
       "minimumReleaseAge": "0 days"
