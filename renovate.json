@@ -4,11 +4,38 @@
   "dependencyDashboard": true,
   "automerge": false,
   "platformAutomerge": true,
+  "minimumReleaseAge": "5 days",
   "packageRules": [
     {
       "description": "Chart.yaml OCI chart-dependency bumps re-vendor charts/*.tgz + Chart.lock in the same PR, so the archive never drifts from the pinned version.",
       "matchManagers": ["helmv3"],
       "postUpdateOptions": ["helmUpdateSubChartArchives"]
+    },
+    {
+      "description": "R27: third-party leaf workload charts (e.g. proof-app/podinfo) auto-merge patch+minor+digest once required checks are green; major stays a manual PR.",
+      "matchManagers": ["helmv3"],
+      "matchFileNames": ["gitops/workloads/**"],
+      "matchUpdateTypes": ["patch", "minor", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "R27: platform charts are more conservative than leaf workloads -- patch+digest auto-merge only; minor and major stay manual PRs (blast-radius change to shared cluster infra). ArgoCD itself is deliberately excluded -- it is the GitOps control plane that self-applies every other chart in this repo via the same prune+selfHeal mechanism, so it stays fully manual regardless of update type (security-reviewed MEDIUM).",
+      "matchManagers": ["helmv3"],
+      "matchFileNames": [
+        "gitops/platform/cert-manager/**",
+        "gitops/platform/traefik/**",
+        "gitops/platform/longhorn/**",
+        "gitops/platform/metrics-server/**"
+      ],
+      "matchUpdateTypes": ["patch", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "R26: own-artifact (change-tracking-dashboard chart version + pinned image tag) auto-merges at any level -- including major -- once required checks are green, with no release-age cooldown, so the dashboard's own commit-to-deploy path stays seamless.",
+      "matchManagers": ["helmv3", "custom.regex"],
+      "matchFileNames": ["gitops/workloads/change-tracking-dashboard/**"],
+      "automerge": true,
+      "minimumReleaseAge": "0 days"
     }
   ],
   "customManagers": [
