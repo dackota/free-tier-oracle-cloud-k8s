@@ -54,13 +54,13 @@ jobs:
           # definition for <url>" unless that URL was registered via
           # `helm repo add` first, even though Chart.yaml already pins it
           # explicitly. OCI repositories need no such registration.
-          grep -rhoP '^\s*repository:\s*\K\S+' gitops --include=Chart.yaml \
-            | grep -v '^oci://' \
-            | sort -u \
-            | while IFS= read -r url; do
-                alias="$(echo "$url" | sed -E 's#^https?://##; s#/.*##; s/[^a-zA-Z0-9]+/-/g')"
-                helm repo add "$alias" "$url"
-              done
+          urls="$(grep -rhoP '^\s*repository:\s*\K\S+' gitops --include=Chart.yaml | grep -E '^https?://' || true)"
+          if [ -n "$urls" ]; then
+            echo "$urls" | sort -u | while IFS= read -r url; do
+              alias="$(echo "$url" | sed -E 's#^https?://##; s#/.*##; s/[^a-zA-Z0-9]+/-/g')"
+              helm repo add "$alias" "$url"
+            done
+          fi
 
       - name: Install kubeconform (pinned, checksum-verified)
         env:
