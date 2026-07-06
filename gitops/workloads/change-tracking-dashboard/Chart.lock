@@ -1,6 +1,6 @@
 dependencies:
 - name: change-tracking-dashboard
   repository: oci://ghcr.io/dackota/charts
-  version: 0.1.1
-digest: sha256:d5376ad1a59ac5f9ba7a019ee30b1eebe86ee108bbd433f0eba0069ea050aa86
-generated: "2026-07-05T16:26:22.261257-07:00"
+  version: 0.1.2
+digest: sha256:c7dbd4cbf3dea4362eb7e20b4380e6e845de674030dfa64e77fa77277bc6cd01
+generated: "2026-07-06T22:06:30.63351659Z"
