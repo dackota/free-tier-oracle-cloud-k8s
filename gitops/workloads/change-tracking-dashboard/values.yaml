@@ -19,11 +19,16 @@ issuer: letsencrypt-prod
 
 change-tracking-dashboard:
   image:
-    # Published by the app repo's Release workflow. tag omitted on purpose: the
-    # chart's image helper defaults it to .Chart.AppVersion, which the workflow
-    # uses as the image tag — so pinning the chart dependency version above pins
-    # the image too.
+    # Published by the app repo's Release workflow. Pinned explicitly (rather
+    # than left to the chart's .Chart.AppVersion default) so Renovate can
+    # track the image tag on its own stream, independent of the chart
+    # dependency version above — the two now bump on separate PRs/cadences.
+    # Trade-off accepted: this creates two sources of truth for the tag (the
+    # vendored chart's embedded appVersion and this pinned value), in
+    # exchange for the image being able to move without a chart re-version.
     repository: ghcr.io/dackota/change-tracking-dashboard
+    # renovate: datasource=docker depName=ghcr.io/dackota/change-tracking-dashboard
+    tag: "0.1.1"
 
   # Longhorn provides durable ReadWriteOnce storage on the homelab; the SQLite
   # change-history DB lives here. The chart pins replicaCount to 1 (RWO PVC).
