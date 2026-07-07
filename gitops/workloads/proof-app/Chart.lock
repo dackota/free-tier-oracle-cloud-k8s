@@ -1,6 +1,6 @@
 dependencies:
-- name: podinfo
-  repository: https://stefanprodan.github.io/podinfo
-  version: 6.14.0
-digest: sha256:97d3b1964dd10b42af069ae3c0b42dc953c14f3e2dfd517e95bc3d35a061f3f9
-generated: "2026-07-03T22:16:36.834742-07:00"
+- name: generic-app-chart
+  repository: oci://ghcr.io/dackota/charts
+  version: 0.3.1
+digest: sha256:a9167137e3a486ccc7d93b876f246c5e8ca501f504dd9500d6c23fb7e44c70f3
+generated: "2026-07-07T08:36:19.341574-07:00"

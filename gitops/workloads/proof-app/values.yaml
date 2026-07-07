@@ -1,25 +1,51 @@
-# proof-app (R27-R29): the single v1 proof workload validating the full
-# git -> ArgoCD -> Gateway -> live HTTPS path. podinfo values nest under the
-# `podinfo:` subchart key (same convention as gitops/platform/metrics-server).
-podinfo:
-  # Free-tier-sized requests only, no limits — matches the repo-wide pattern
-  # (see traefik/metrics-server values) on a capacity-constrained homelab node.
+# proof-app (R32): the v1 proof workload validating generic-app-chart's full
+# app-owned routing/TLS model end-to-end — git -> ArgoCD -> Gateway -> live
+# HTTPS. Values nest under the `generic-app-chart:` dependency key (Helm's
+# standard subchart-values convention).
+generic-app-chart:
+  # Keeps every rendered resource named "proof-app" instead of the chart's
+  # default "proof-app-generic-app-chart" (R2: <release>-<chart>, since
+  # "proof-app" doesn't already contain "generic-app-chart").
+  fullnameOverride: proof-app
+
+  image:
+    repository: ghcr.io/stefanprodan/podinfo
+    tag: 6.14.0
+
+  # Free-tier-sized requests only, matching the repo-wide pattern (see
+  # traefik/metrics-server values) on a capacity-constrained homelab node;
+  # limits stay at the chart's own default.
   resources:
     requests:
       cpu: 10m
       memory: 32Mi
 
-# Base domain for this cluster's public hostnames. The proof app is served at
-# `proof.<baseDomain>`: templates/_helpers.tpl derives that single hostname, and
-# both the HTTPRoute (routing) and the Certificate (dnsNames) call the helper,
-# so they can never drift apart. Requires a DNS record for that name — a
-# wildcard `*.<baseDomain>` A record pointing at the Traefik LoadBalancer's
-# public IP works — so Let's Encrypt's HTTP-01 challenge can validate.
-baseDomain: dackota.com
+  service:
+    ports:
+      - name: http
+        port: 9898
+        targetPort: 9898
+        protocol: TCP
 
-# R29 wants a browser-trusted cert, so default to the production Let's Encrypt
-# ClusterIssuer. During first live bring-up the operator may temporarily set
-# `issuer: letsencrypt-staging` (via a values overlay) to dodge Let's Encrypt's
-# production rate limits while proving out the HTTP-01-through-HTTPRoute path,
-# then flip back to letsencrypt-prod once issuance is confirmed working.
-issuer: letsencrypt-prod
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+
+  # R21-R23: expose over HTTPS through the lab's one shared Traefik Gateway,
+  # in this app's own namespace (ADR 0001 app-owned routing/TLS model).
+  routing:
+    enabled: true
+    hostnames:
+      - proof.dackota.com
+    gateway:
+      name: traefik-gateway
+      namespace: traefik
+      sectionName: websecure
+    tls:
+      issuerRef:
+        name: letsencrypt-prod

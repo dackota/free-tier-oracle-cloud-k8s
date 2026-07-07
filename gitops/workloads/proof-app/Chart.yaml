@@ -1,11 +1,14 @@
 apiVersion: v2
 name: proof-app
-description: proof-app (R27-R29) — the single v1 proof workload (podinfo),
-  wrapping the upstream chart plus local templates for the shared Gateway
-  routing and the cert-manager Certificate that back its HTTPS URL
+description: >-
+  proof-app (R32) — the v1 proof-of-chart workload (podinfo), consumed as a
+  thin OCI dependency on the published generic-app-chart. Proves the chart's
+  full app-owned routing/TLS model end-to-end: Deployment, Service,
+  HTTPRoute, and cert-manager Certificate all rendered by the chart from this
+  app's own values, reachable over HTTPS through the shared Gateway.
 type: application
 version: 0.1.0
 dependencies:
-  - name: podinfo
-    version: 6.14.0
-    repository: https://stefanprodan.github.io/podinfo
+  - name: generic-app-chart
+    version: 0.3.1
+    repository: oci://ghcr.io/dackota/charts
