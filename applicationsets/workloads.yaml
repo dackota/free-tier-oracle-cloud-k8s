@@ -37,6 +37,15 @@ spec:
         server: https://kubernetes.default.svc
         namespace: '{{dig "namespace" .path.basename .}}'
       syncPolicy:
+        # Labels every workload namespace with `gateway-access: "true"` — the
+        # label the shared Traefik Gateway's listeners select on
+        # (gitops/platform/traefik/values.yaml, namespacePolicy.selector) to
+        # allow that namespace's own HTTPRoute/Certificate to attach. Every
+        # current and future workload gets this automatically; no per-app
+        # step. selfHeal below re-applies it if ever removed by hand.
+        managedNamespaceMetadata:
+          labels:
+            gateway-access: "true"
         automated:
           prune: true
           selfHeal: true

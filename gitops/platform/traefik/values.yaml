@@ -31,21 +31,39 @@ traefik:
       # this Gateway's own namespace (traefik) could attach, which is why
       # proof-app and change-tracking-dashboard currently place their
       # HTTPRoute/Certificate here in traefik rather than their own namespace.
-      # `from: All` opts both listeners into cross-namespace attachment so a
-      # workload's chart can own its HTTPRoute/Certificate in its own namespace
-      # instead — the personal-generic-app-chart project's app-owned-routing
-      # model (see that repo's docs/adr/0001-gateway-cross-namespace-routing.md).
-      # Existing workloads are unaffected: a same-namespace Route already
-      # satisfies the broader `All` policy.
+      #
+      # `Selector` (not the broader `All`) opts in only namespaces carrying the
+      # `gateway-access: "true"` label — every workload namespace gets it
+      # automatically via the `workloads` ApplicationSet's
+      # managedNamespaceMetadata (applicationsets/workloads.yaml), and this
+      # Gateway's own `traefik` namespace gets it via the `platform`
+      # ApplicationSet (applicationsets/platform.yaml) so the two EXISTING
+      # same-namespace Routes (proof-app, change-tracking-dashboard) keep
+      # attaching — `Selector` replaces the `Same` default outright, it does
+      # not implicitly also allow the Gateway's own namespace. No other
+      # platform namespace (argocd, cert-manager, longhorn-system, ...) is
+      # labeled, so this stays scoped to exactly the namespaces that need
+      # internet-facing routing, not every namespace in the cluster (`All`).
+      # This is the platform-side prerequisite for
+      # personal-generic-app-chart's app-owned-routing model — each workload
+      # owns its own HTTPRoute/Certificate in its own namespace instead of
+      # writing into traefik's (see that repo's
+      # docs/adr/0001-gateway-cross-namespace-routing.md).
       web:
         namespacePolicy:
-          from: All
+          from: Selector
+          selector:
+            matchLabels:
+              gateway-access: "true"
       websecure:
         port: 8443
         protocol: HTTPS
         mode: Terminate
         namespacePolicy:
-          from: All
+          from: Selector
+          selector:
+            matchLabels:
+              gateway-access: "true"
         certificateRefs:
           - kind: Secret
             name: traefik-gateway-tls
