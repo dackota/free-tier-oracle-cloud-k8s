@@ -54,25 +54,11 @@ spec:
         namespace: '{{dig "namespace" .path.basename .}}'
       # ADR 0003: no repository-credential Secret — this public repo and the
       # vendored upstream charts inside each add-on dir are pulled anonymously.
+      # The conditional gateway-access label lives in `templatePatch` below, not
+      # inline here: this file is ALSO synced verbatim as a raw manifest by the
+      # `bootstrap` app-of-apps (applicationsets/, directory.recurse), and a bare
+      # `{{- if }}` line under a YAML key is not valid YAML.
       syncPolicy:
-        {{- if dig "gatewayAccess" false . }}
-        # `Selector`-based allowedRoutes needs the Gateway's OWN namespace
-        # labeled too (gitops/platform/traefik/values.yaml,
-        # namespacePolicy.selector) — Selector replaces the Same-namespace
-        # default outright, it doesn't implicitly also allow the Gateway's own
-        # namespace. Driven by the add-on's own config.yaml (`gatewayAccess:
-        # true`, same pattern as `namespace` above) rather than a hardcoded
-        # directory-name match, so a future rename of an add-on's directory
-        # can't silently desync this — applicationsets/*.yaml isn't rendered
-        # by pr-ci.yml's kubeconform check, so a broken hardcoded match here
-        # would have no CI signal, only a live routing failure. No add-on
-        # other than traefik sets `gatewayAccess: true` today: no other
-        # platform namespace (argocd, cert-manager, longhorn-system, ...)
-        # should be routable through the public Gateway.
-        managedNamespaceMetadata:
-          labels:
-            gateway-access: "true"
-        {{- end }}
         automated:
           prune: true
           selfHeal: true
@@ -94,3 +80,34 @@ spec:
           # large enough that client-side apply's last-applied-configuration
           # annotation exceeds the Kubernetes annotation size limit.
           - ServerSideApply=true
+  # Conditionally label the add-on's namespace `gateway-access: "true"` — the
+  # label the shared Traefik Gateway's listeners select on
+  # (gitops/platform/traefik/values.yaml, namespacePolicy.selector) to allow
+  # that namespace's own HTTPRoute/Certificate to attach. `Selector`-based
+  # allowedRoutes replaces the Same-namespace default outright, so the Gateway's
+  # OWN namespace needs the label too; without it every route is rejected
+  # (NotAllowedByListeners) and the public endpoints 404.
+  #
+  # This MUST be a `templatePatch` (a Go-templated *string*), not an inline
+  # `{{- if }}` in `template` above: `bootstrap` (the app-of-apps) syncs this
+  # file verbatim as a raw manifest, and a bare `{{- if }}` / `{{- end }}` line
+  # under a YAML key fails its manifest parse ("did not find expected node
+  # content"), freezing BOTH ApplicationSets. A block-scalar string is legal
+  # YAML there and only Go-templated by the ApplicationSet controller; it
+  # renders empty (a no-op merge) for every add-on except the one whose
+  # config.yaml sets `gatewayAccess: true`.
+  #
+  # Driven by the add-on's own config.yaml (`gatewayAccess: true`, same `dig`
+  # pattern as `namespace` above) rather than a hardcoded directory-name match,
+  # so a future rename of an add-on's directory can't silently desync it. No
+  # add-on other than traefik sets `gatewayAccess: true` today: no other
+  # platform namespace (argocd, cert-manager, longhorn-system, ...) should be
+  # routable through the public Gateway.
+  templatePatch: |
+    {{- if dig "gatewayAccess" false . }}
+    spec:
+      syncPolicy:
+        managedNamespaceMetadata:
+          labels:
+            gateway-access: "true"
+    {{- end }}
