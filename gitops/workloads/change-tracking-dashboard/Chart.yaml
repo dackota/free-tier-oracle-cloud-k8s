@@ -1,17 +1,18 @@
 apiVersion: v2
 name: change-tracking-dashboard
-description: >
-  change-tracking-dashboard workload — polls this GitOps repo's history and
-  surfaces tracked Helm chart/subchart/image version changes as a faceted,
-  time-ordered feed. Wraps the app's published chart (vendored from ghcr as an
-  OCI dependency) plus local templates for the shared Gateway route and its cert.
+description: >-
+  change-tracking-dashboard (ctd-migrate-retire) — polls this GitOps repo's
+  history and surfaces tracked Helm chart/subchart/image version changes as a
+  faceted, time-ordered feed, consumed as a thin OCI dependency on the
+  published generic-app-chart. Proves the chart's full app-owned
+  routing/TLS model end-to-end against a real stateful workload: Deployment,
+  Service, ConfigMap, PersistentVolumeClaim (an existing, already-bound
+  Longhorn claim), HTTPRoute, and cert-manager Certificate all rendered by
+  the chart from this app's own values, reachable over HTTPS through the
+  shared Gateway.
 type: application
 version: 0.1.0
 dependencies:
-  # Published by the app repo's Release workflow to ghcr as an OCI chart.
-  # `helm dependency build` vendors it into charts/*.tgz (the re-vendor workflow
-  # keeps it fresh on version bumps). Requires the ghcr chart package to be
-  # public (anonymous pull) — see the app repo's post-merge steps.
-  - name: change-tracking-dashboard
-    version: 0.1.2
+  - name: generic-app-chart
+    version: 0.4.0
     repository: oci://ghcr.io/dackota/charts
