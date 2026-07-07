@@ -24,10 +24,28 @@ traefik:
       # so apps don't fight over a single shared Secret:
       #   - traefik-gateway-tls            -> proof.<baseDomain>            (proof-app)
       #   - change-tracking-dashboard-tls  -> changes.<baseDomain>          (change-tracking-dashboard)
+      #
+      # namespacePolicy renders directly into this listener's Gateway API
+      # allowedRoutes.namespaces (see the upstream chart's templates/gateway.yaml).
+      # Unset, it defaults to Gateway API's own default (Same) — only Routes in
+      # this Gateway's own namespace (traefik) could attach, which is why
+      # proof-app and change-tracking-dashboard currently place their
+      # HTTPRoute/Certificate here in traefik rather than their own namespace.
+      # `from: All` opts both listeners into cross-namespace attachment so a
+      # workload's chart can own its HTTPRoute/Certificate in its own namespace
+      # instead — the personal-generic-app-chart project's app-owned-routing
+      # model (see that repo's docs/adr/0001-gateway-cross-namespace-routing.md).
+      # Existing workloads are unaffected: a same-namespace Route already
+      # satisfies the broader `All` policy.
+      web:
+        namespacePolicy:
+          from: All
       websecure:
         port: 8443
         protocol: HTTPS
         mode: Terminate
+        namespacePolicy:
+          from: All
         certificateRefs:
           - kind: Secret
             name: traefik-gateway-tls
