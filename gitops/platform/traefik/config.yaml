@@ -1,1 +1,8 @@
 namespace: traefik
+# Read by applicationsets/platform.yaml's syncPolicy conditional
+# (managedNamespaceMetadata) — the single source of truth for "this add-on's
+# namespace needs the gateway-access label" (Selector-based allowedRoutes,
+# gitops/platform/traefik/values.yaml, needs the Gateway's OWN namespace
+# labeled too). Declared here, on the add-on itself, so a future rename of
+# this directory can't silently desync a hardcoded match living elsewhere.
+gatewayAccess: true

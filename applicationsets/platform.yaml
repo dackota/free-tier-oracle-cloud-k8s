@@ -55,6 +55,24 @@ spec:
       # ADR 0003: no repository-credential Secret — this public repo and the
       # vendored upstream charts inside each add-on dir are pulled anonymously.
       syncPolicy:
+        {{- if dig "gatewayAccess" false . }}
+        # `Selector`-based allowedRoutes needs the Gateway's OWN namespace
+        # labeled too (gitops/platform/traefik/values.yaml,
+        # namespacePolicy.selector) — Selector replaces the Same-namespace
+        # default outright, it doesn't implicitly also allow the Gateway's own
+        # namespace. Driven by the add-on's own config.yaml (`gatewayAccess:
+        # true`, same pattern as `namespace` above) rather than a hardcoded
+        # directory-name match, so a future rename of an add-on's directory
+        # can't silently desync this — applicationsets/*.yaml isn't rendered
+        # by pr-ci.yml's kubeconform check, so a broken hardcoded match here
+        # would have no CI signal, only a live routing failure. No add-on
+        # other than traefik sets `gatewayAccess: true` today: no other
+        # platform namespace (argocd, cert-manager, longhorn-system, ...)
+        # should be routable through the public Gateway.
+        managedNamespaceMetadata:
+          labels:
+            gateway-access: "true"
+        {{- end }}
         automated:
           prune: true
           selfHeal: true
