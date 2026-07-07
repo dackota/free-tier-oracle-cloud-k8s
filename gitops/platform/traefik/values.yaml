@@ -22,33 +22,49 @@ traefik:
       # routing from the cert-manager rollout. Each public workload owns its own
       # host cert Secret and adds it here; Traefik selects the right one per SNI,
       # so apps don't fight over a single shared Secret:
-      #   - traefik-gateway-tls            -> proof.<baseDomain>            (proof-app)
-      #   - change-tracking-dashboard-tls  -> changes.<baseDomain>          (change-tracking-dashboard)
+      #   - proof-app-tls (ns proof-app)        -> proof.<baseDomain>   (proof-app, migrated to
+      #                                            generic-app-chart — R32 — so its Certificate now
+      #                                            renders in its own namespace; cross-namespace per
+      #                                            ADR 0001, hence the explicit `namespace` below)
+      #   - change-tracking-dashboard-tls (ns traefik) -> changes.<baseDomain> (change-tracking-dashboard,
+      #                                            not yet migrated — still renders its Certificate
+      #                                            directly into this `traefik` namespace under its
+      #                                            own old pattern, see ctd-migrate-retire)
+      #
+      # NOTE: the old `traefik-gateway-tls` Secret (this `traefik` namespace)
+      # is now orphaned by the R32 migration above — cert-manager does not
+      # garbage-collect a Secret when its owning Certificate is deleted, by
+      # default. Safe for the operator to manually delete once the proof-app
+      # migration is confirmed live.
       #
       # namespacePolicy renders directly into this listener's Gateway API
       # allowedRoutes.namespaces (see the upstream chart's templates/gateway.yaml).
       # Unset, it defaults to Gateway API's own default (Same) — only Routes in
       # this Gateway's own namespace (traefik) could attach, which is why
-      # proof-app and change-tracking-dashboard currently place their
-      # HTTPRoute/Certificate here in traefik rather than their own namespace.
+      # change-tracking-dashboard (not yet migrated) still places its
+      # HTTPRoute/Certificate here in traefik rather than its own namespace;
+      # proof-app (R32) has moved to the app-owned model below, with its own
+      # HTTPRoute/Certificate in the `proof-app` namespace instead.
       #
       # `Selector` (not the broader `All`) opts in only namespaces carrying the
       # `gateway-access: "true"` label — every workload namespace gets it
       # automatically via the `workloads` ApplicationSet's
       # managedNamespaceMetadata (applicationsets/workloads.yaml), and this
       # Gateway's own `traefik` namespace gets it via the `platform`
-      # ApplicationSet (applicationsets/platform.yaml) so the two EXISTING
-      # same-namespace Routes (proof-app, change-tracking-dashboard) keep
-      # attaching — `Selector` replaces the `Same` default outright, it does
-      # not implicitly also allow the Gateway's own namespace. No other
-      # platform namespace (argocd, cert-manager, longhorn-system, ...) is
-      # labeled, so this stays scoped to exactly the namespaces that need
-      # internet-facing routing, not every namespace in the cluster (`All`).
+      # ApplicationSet (applicationsets/platform.yaml) so change-tracking-dashboard's
+      # EXISTING same-namespace Route keeps attaching — `Selector` replaces
+      # the `Same` default outright, it does not implicitly also allow the
+      # Gateway's own namespace. No other platform namespace (argocd,
+      # cert-manager, longhorn-system, ...) is labeled, so this stays scoped
+      # to exactly the namespaces that need internet-facing routing, not
+      # every namespace in the cluster (`All`).
       # This is the platform-side prerequisite for
       # personal-generic-app-chart's app-owned-routing model — each workload
       # owns its own HTTPRoute/Certificate in its own namespace instead of
       # writing into traefik's (see that repo's
-      # docs/adr/0001-gateway-cross-namespace-routing.md).
+      # docs/adr/0001-gateway-cross-namespace-routing.md). proof-app (R32) is
+      # the first workload on this model; change-tracking-dashboard follows
+      # in a later, still-blocked migration (ctd-migrate-retire).
       web:
         namespacePolicy:
           from: Selector
@@ -66,7 +82,8 @@ traefik:
               gateway-access: "true"
         certificateRefs:
           - kind: Secret
-            name: traefik-gateway-tls
+            name: proof-app-tls
+            namespace: proof-app
           - kind: Secret
             name: change-tracking-dashboard-tls
   # Data-plane Service stays LoadBalancer (chart default) — provisions the
