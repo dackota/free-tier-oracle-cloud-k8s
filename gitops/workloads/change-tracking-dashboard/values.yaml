@@ -74,6 +74,16 @@ generic-app-chart:
   # change-tracking-dashboard-data (1Gi, Longhorn) holding the real SQLite
   # change-history DB. This must never become a fresh empty PVC — that would
   # be data loss on the live app.
+  #
+  # Load-bearing, git-invisible prerequisite: since existingClaim means this
+  # chart renders zero PVC, the live PVC change-tracking-dashboard-data has
+  # been annotated in-cluster (not expressible in this repo) with
+  # argocd.argoproj.io/sync-options: Prune=false, so this Application's
+  # automated: {prune: true, selfHeal: true} sync policy
+  # (applicationsets/workloads.yaml) never deletes it once it drops out of
+  # the rendered manifest. Recreating this PVC (disaster recovery) or
+  # repointing existingClaim at a different pre-existing PVC requires
+  # re-applying that same annotation by hand, or ArgoCD will prune it.
   persistence:
     enabled: true
     existingClaim: change-tracking-dashboard-data
