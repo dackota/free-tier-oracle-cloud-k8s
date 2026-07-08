@@ -121,11 +121,16 @@ generic-app-chart:
             - glob: "gitops/*/*/Chart.yaml"
               fields:
                 - name: chartDependencies
-                  expr: '.dependencies | map({(if .alias then .alias else .name end): .version}) | add'
+                  # `// []` guards charts with no dependencies: block (e.g.
+                  # cluster-issuers, gateway-api-crds) — map over null errors.
+                  expr: '(.dependencies // []) | map({(if .alias then .alias else .name end): .version}) | add'
             - glob: "gitops/*/*/values.yaml"
               fields:
                 - name: imageTags
-                  expr: 'to_entries | map(select(.value.image.tag)) | map({(.key): .value.image.tag}) | add'
+                  # Type-guard each entry so top-level scalar values (e.g. an
+                  # `email:`/`domain:` string) are skipped instead of erroring
+                  # on `.value.image` — jq `and` short-circuits before indexing.
+                  expr: 'to_entries | map(select((.value | type) == "object" and (.value.image | type) == "object" and .value.image.tag != null)) | map({(.key): .value.image.tag}) | add'
 
   extraVolumes:
     - name: config
