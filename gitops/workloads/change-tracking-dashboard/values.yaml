@@ -1,44 +1,66 @@
-# change-tracking-dashboard workload: polls THIS GitOps repo and serves a
-# faceted change feed at https://changes.<baseDomain>. The app chart is a
-# vendored OCI dependency (Chart.yaml); its values nest under the subchart's
-# name key `change-tracking-dashboard:`. The top-level baseDomain/issuer feed
-# this workload's local Gateway route + Certificate templates (same convention
-# as gitops/workloads/proof-app).
+# change-tracking-dashboard (ctd-migrate-retire): the second workload (after
+# proof-app, R32) migrated onto generic-app-chart's full app-owned
+# routing/TLS model end-to-end — git -> ArgoCD -> Gateway -> live HTTPS. This
+# is a live, stateful production app (real PVC, real SQLite change-history
+# data, real HTTPS traffic at changes.dackota.com); every value below
+# replicates the vendored bespoke chart's live behavior exactly. Values nest
+# under the `generic-app-chart:` dependency key (Helm's standard
+# subchart-values convention).
+generic-app-chart:
+  # Keeps every rendered resource named "change-tracking-dashboard" instead
+  # of the chart's default "change-tracking-dashboard-generic-app-chart"
+  # (R2: <release>-<chart>) — matches the resource names the bespoke chart
+  # already rendered live.
+  fullnameOverride: change-tracking-dashboard
 
-# Base domain for this cluster's public hostnames; served at changes.<baseDomain>.
-# templates/_helpers.tpl derives that hostname, and both the HTTPRoute (routing)
-# and the Certificate (dnsNames) call the helper so they can never drift. Needs a
-# DNS record for that name — the wildcard *.<baseDomain> A record pointing at the
-# Traefik LoadBalancer's public IP (the one proof-app relies on) covers it.
-baseDomain: dackota.com
-
-# Production Let's Encrypt ClusterIssuer for a browser-trusted cert. During
-# first bring-up the operator may temporarily set issuer: letsencrypt-staging
-# (a values overlay) to dodge production rate limits, then flip back.
-issuer: letsencrypt-prod
-
-change-tracking-dashboard:
   image:
-    # Published by the app repo's Release workflow. Pinned explicitly (rather
-    # than left to the chart's .Chart.AppVersion default) so Renovate can
-    # track the image tag on its own stream, independent of the chart
-    # dependency version above — the two now bump on separate PRs/cadences.
-    # Trade-off accepted: this creates two sources of truth for the tag (the
-    # vendored chart's embedded appVersion and this pinned value), in
-    # exchange for the image being able to move without a chart re-version.
     repository: ghcr.io/dackota/change-tracking-dashboard
     # renovate: datasource=docker depName=ghcr.io/dackota/change-tracking-dashboard
     tag: "0.4.0"
 
-  # Longhorn provides durable ReadWriteOnce storage on the homelab; the SQLite
-  # change-history DB lives here. The chart pins replicaCount to 1 (RWO PVC).
-  persistence:
-    size: 1Gi
-    storageClassName: longhorn
-    mountPath: /data
+  # The bespoke chart hardcoded uid/gid 65534 ("nobody") in its pod
+  # securityContext; generic-app-chart's own default is 10001. Overriding
+  # this avoids an ownership mismatch against the already-formatted Longhorn
+  # volume (see persistence below) on cutover.
+  podSecurityContext:
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
 
-  # Free-tier-sized requests, no limits set here beyond the chart defaults —
-  # matches the repo-wide pattern on a capacity-constrained homelab node.
+  # The 3 env vars the bespoke chart hardcoded (not configurable there
+  # either) — reproduced verbatim.
+  env:
+    - name: CONFIG_PATH
+      value: /etc/dashboard/config.yaml
+    - name: DB_PATH
+      value: /data/changes.db
+    - name: LISTEN_ADDR
+      value: ":8080"
+
+  service:
+    ports:
+      - name: http
+        port: 8080
+        targetPort: 8080
+        protocol: TCP
+
+  # Matches the live Deployment's actual probes exactly.
+  livenessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 15
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+  # Existing production override (already live today) — the bespoke chart's
+  # own chart-level default was 50m/64Mi; the gitops values already
+  # overrode requests to 25m. Preserved as-is, not reverted to any default.
   resources:
     requests:
       cpu: 25m
@@ -47,32 +69,69 @@ change-tracking-dashboard:
       cpu: 200m
       memory: 128Mi
 
-  # Tracker config (hot-reloaded from the ConfigMap). Poll THIS public GitOps
-  # repo over anonymous HTTPS — no GitHub App secret needed (githubApp.secretName
-  # stays empty). The dashboard clones the remote repo into /tmp (writable
-  # emptyDir in the chart) and walks its history.
-  trackerConfig:
-    defaults:
-      # Homelab cadence: check every 10 minutes; walk 90 days of history on first run.
-      pollIntervalSeconds: 600
-      backfillDays: 90
-    trackers:
-      - repo: https://github.com/dackota/free-tier-oracle-cloud-k8s.git
-        # Facet each Change by GitOps layer (platform|workloads) and component
-        # (the chart dir), so the feed can be filtered by both. Named capture
-        # groups become facet keys.
-        facetRegex: "gitops/(?P<layer>platform|workloads)/(?P<component>[^/]+)/"
-        files:
-          # Vendored chart/subchart versions — the primary thing that changes in
-          # this repo (Dependabot bumps Chart.yaml dependency versions). Keyed map
-          # of dependency name (alias if set, else name) -> version.
-          - glob: "gitops/*/*/Chart.yaml"
-            fields:
-              - name: chartDependencies
-                expr: '.dependencies | map({(if .alias then .alias else .name end): .version}) | add'
-          # Image tags pinned in values.yaml, keyed by the top-level subchart key
-          # they sit under (e.g. podinfo.image.tag).
-          - glob: "gitops/*/*/values.yaml"
-            fields:
-              - name: imageTags
-                expr: 'to_entries | map(select(.value.image.tag)) | map({(.key): .value.image.tag}) | add'
+  # existingClaim makes generic-app-chart's PVC template skip creating a new
+  # PVC and instead mount the already-bound live PVC
+  # change-tracking-dashboard-data (1Gi, Longhorn) holding the real SQLite
+  # change-history DB. This must never become a fresh empty PVC — that would
+  # be data loss on the live app.
+  #
+  # Load-bearing, git-invisible prerequisite: since existingClaim means this
+  # chart renders zero PVC, the live PVC change-tracking-dashboard-data has
+  # been annotated in-cluster (not expressible in this repo) with
+  # argocd.argoproj.io/sync-options: Prune=false, so this Application's
+  # automated: {prune: true, selfHeal: true} sync policy
+  # (applicationsets/workloads.yaml) never deletes it once it drops out of
+  # the rendered manifest. Recreating this PVC (disaster recovery) or
+  # repointing existingClaim at a different pre-existing PVC requires
+  # re-applying that same annotation by hand, or ArgoCD will prune it.
+  persistence:
+    enabled: true
+    existingClaim: change-tracking-dashboard-data
+    mountPath: /data
+
+  # Tracker config (hot-reloaded), moved verbatim from the bespoke chart's
+  # ConfigMap into this chart's generic `config` value. Rendered into a
+  # ConfigMap named after this chart's fullname (no suffix) — mounted below
+  # via extraVolumes/extraVolumeMounts since generic-app-chart's `config`
+  # only renders the ConfigMap, it doesn't auto-mount it.
+  config:
+    config.yaml: |
+      defaults:
+        pollIntervalSeconds: 600
+        backfillDays: 90
+      trackers:
+        - repo: https://github.com/dackota/free-tier-oracle-cloud-k8s.git
+          facetRegex: "gitops/(?P<layer>platform|workloads)/(?P<component>[^/]+)/"
+          files:
+            - glob: "gitops/*/*/Chart.yaml"
+              fields:
+                - name: chartDependencies
+                  expr: '.dependencies | map({(if .alias then .alias else .name end): .version}) | add'
+            - glob: "gitops/*/*/values.yaml"
+              fields:
+                - name: imageTags
+                  expr: 'to_entries | map(select(.value.image.tag)) | map({(.key): .value.image.tag}) | add'
+
+  extraVolumes:
+    - name: config
+      configMap:
+        name: change-tracking-dashboard
+  extraVolumeMounts:
+    - name: config
+      mountPath: /etc/dashboard
+      readOnly: true
+
+  # R21-R23: expose over HTTPS through the lab's one shared Traefik Gateway,
+  # in this app's own namespace (ADR 0001 app-owned routing/TLS model). The
+  # live, already-working hostname — unchanged by this migration.
+  routing:
+    enabled: true
+    hostnames:
+      - changes.dackota.com
+    gateway:
+      name: traefik-gateway
+      namespace: traefik
+      sectionName: websecure
+    tls:
+      issuerRef:
+        name: letsencrypt-prod
