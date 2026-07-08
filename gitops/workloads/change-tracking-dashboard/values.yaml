@@ -31,7 +31,7 @@ generic-app-chart:
   image:
     repository: ghcr.io/dackota/change-tracking-dashboard
     # renovate: datasource=docker depName=ghcr.io/dackota/change-tracking-dashboard
-    tag: "0.9.1"
+    tag: "0.10.0"
 
   # The bespoke chart hardcoded uid/gid 65534 ("nobody") in its pod
   # securityContext; generic-app-chart's own default is 10001. Overriding
