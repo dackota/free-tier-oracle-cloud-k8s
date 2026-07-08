@@ -13,6 +13,21 @@ generic-app-chart:
   # already rendered live.
   fullnameOverride: change-tracking-dashboard
 
+  # CRITICAL, load-bearing: without this, generic-app-chart.selectorLabels
+  # renders `app.kubernetes.io/name: generic-app-chart` (the chart's own
+  # name), but the live Deployment created by the bespoke chart already has
+  # an immutable spec.selector of `app.kubernetes.io/name:
+  # change-tracking-dashboard`. Kubernetes rejects any Deployment update
+  # that changes spec.selector, so ArgoCD gets stuck retrying forever, and
+  # the Service (whose selector *does* update, since Service selectors are
+  # mutable) ends up with zero matching endpoints — a live outage,
+  # discovered the hard way during this migration's rollout. nameOverride
+  # keeps the selector identical to the pre-existing one so the update
+  # applies as a normal in-place patch instead. Any future live-app
+  # migration onto this chart (not a fresh deployment) must set this to the
+  # previous chart's name.
+  nameOverride: change-tracking-dashboard
+
   image:
     repository: ghcr.io/dackota/change-tracking-dashboard
     # renovate: datasource=docker depName=ghcr.io/dackota/change-tracking-dashboard
