@@ -1,0 +1,16 @@
+apiVersion: v2
+name: job-intel
+description: >-
+  The Dagster stack for the job-intel pipeline: webserver + daemon +
+  K8sRunLauncher (one run pod per materialization), configured as a thin
+  umbrella over the official Dagster Helm chart. Adds this repo's app-owned
+  routing/TLS (HTTPRoute + cert-manager Certificate) so the Dagit UI is reachable
+  over HTTPS through the shared Traefik Gateway. Dagster's run/event storage
+  points at the external pgvector Postgres (job-intel-db) — the same database the
+  pipeline uses for embeddings, so one DB serves both.
+type: application
+version: 0.1.0
+dependencies:
+  - name: dagster
+    version: "1.9.11"
+    repository: https://dagster-io.github.io/helm

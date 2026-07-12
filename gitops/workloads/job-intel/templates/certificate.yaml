@@ -1,0 +1,15 @@
+# cert-manager Certificate for the Dagit hostname. Traefik picks up the
+# resulting Secret (tls) to terminate TLS on the websecure listener. HTTP-01 is
+# solved through the Gateway (see platform/cluster-issuers).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: job-intel-tls
+  namespace: {{ .Release.Namespace }}
+spec:
+  secretName: job-intel-tls
+  dnsNames:
+    - {{ .Values.routing.hostname | quote }}
+  issuerRef:
+    name: {{ .Values.routing.tls.issuerRef }}
+    kind: ClusterIssuer

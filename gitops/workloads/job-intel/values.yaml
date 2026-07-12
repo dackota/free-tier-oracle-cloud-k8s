@@ -1,0 +1,95 @@
+# Values for the official Dagster chart nest under the `dagster:` dependency key.
+# Everything is sized for the free-tier A1 nodes; bump requests if pods pend.
+dagster:
+  # ---- User code deployment: our pipeline image (the gRPC code server). ----
+  # The webserver/daemon connect to this; K8sRunLauncher launches run pods from
+  # the same image, inheriting its env/envSecrets below.
+  dagster-user-deployments:
+    enabled: true
+    deployments:
+      - name: job-intel
+        image:
+          repository: ghcr.io/dackota/job-intel
+          # renovate: datasource=docker depName=ghcr.io/dackota/job-intel
+          tag: main
+          pullPolicy: Always
+        dagsterApiGrpcArgs:
+          - "-m"
+          - "job_intel.definitions"
+        port: 4000
+        # App config + secrets. `job-intel-app` (created by hand) carries
+        # JOB_INTEL_DB_DSN and ANTHROPIC_API_KEY; run pods inherit these.
+        envSecrets:
+          - name: job-intel-app
+        env:
+          JOB_INTEL_BOARDS: "stripe,gitlab,airbnb"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 768Mi
+
+  # ---- Use the external pgvector Postgres instead of the bundled one. ----
+  postgresql:
+    enabled: false
+    postgresqlHost: "job-intel-db.job-intel.svc.cluster.local"
+    postgresqlUsername: postgres
+    postgresqlDatabase: jobintel
+    # Secret must contain key `postgresql-password` (shared with job-intel-db).
+    postgresqlSecretName: job-intel-db
+    service:
+      port: 5432
+
+  # ---- One run pod per run (the K8s-native run launcher). ----
+  runLauncher:
+    type: K8sRunLauncher
+    config:
+      k8sRunLauncher:
+        # Run pods need generous CPU/mem for fastembed + Claude calls, but only
+        # while a run is active.
+        resources:
+          requests:
+            cpu: 100m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 1Gi
+
+  # ---- Webserver (Dagit UI). Exposed over HTTPS via templates/httproute.yaml;
+  #      keep the chart's own ingress off (app-owned routing model). ----
+  dagsterWebserver:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  dagsterDaemon:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  ingress:
+    enabled: false
+
+# ---- App-owned routing/TLS (this umbrella chart's own templates). ----
+routing:
+  hostname: jobs.dackota.com
+  # The webserver Service the Dagster chart renders for release name "job-intel".
+  serviceName: job-intel-dagster-webserver
+  servicePort: 80
+  gateway:
+    name: traefik-gateway
+    namespace: traefik
+    sectionName: websecure
+  tls:
+    issuerRef: letsencrypt-prod

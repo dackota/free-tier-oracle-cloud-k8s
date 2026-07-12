@@ -1,0 +1,14 @@
+# Stable in-cluster DNS: job-intel-db.job-intel.svc.cluster.local:5432
+# Used by both the Dagster stack (run/event storage) and the app assets.
+apiVersion: v1
+kind: Service
+metadata:
+  name: job-intel-db
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app.kubernetes.io/name: job-intel-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

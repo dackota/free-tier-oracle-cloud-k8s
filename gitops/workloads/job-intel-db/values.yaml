@@ -1,0 +1,27 @@
+# job-intel-db: pgvector Postgres for the job-intel pipeline.
+image:
+  # Multi-arch (includes linux/arm64 for the Ampere A1 nodes). Verify the tag's
+  # arm64 manifest before bumping: `docker manifest inspect pgvector/pgvector:pg16`.
+  repository: pgvector/pgvector
+  # renovate: datasource=docker depName=pgvector/pgvector
+  tag: "pg16"
+
+database: jobintel
+user: postgres
+
+# The password lives in Secret `job-intel-db` key `password`, created by hand
+# (see README) — never committed. Referenced via env valueFrom below.
+existingSecret: job-intel-db
+
+# Free-tier-sized; Postgres needs a little more headroom than the web apps.
+resources:
+  requests:
+    cpu: 50m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+persistence:
+  size: 2Gi
+  # storageClassName omitted -> Longhorn (defaultClass: true, platform/longhorn).
