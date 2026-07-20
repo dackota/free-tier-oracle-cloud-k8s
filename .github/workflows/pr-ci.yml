@@ -151,5 +151,20 @@ jobs:
         working-directory: terraform
         run: |
           set -euo pipefail
-          terraform init -backend=false -input=false
+          # Retry init, not validate: provider downloads from
+          # releases.hashicorp.com occasionally reset the connection
+          # ("read: connection reset by peer"), and this is a required merge
+          # gate -- a transient network blip must not block auto-merge.
+          # validate is deterministic and offline, so it is not retried.
+          for attempt in 1 2 3; do
+            if terraform init -backend=false -input=false; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::terraform init failed after 3 attempts"
+              exit 1
+            fi
+            echo "init attempt ${attempt} failed (likely transient) -- retrying in $((attempt * 10))s"
+            sleep "$((attempt * 10))"
+          done
           terraform validate -no-color
