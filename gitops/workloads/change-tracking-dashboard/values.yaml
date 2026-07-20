@@ -33,10 +33,11 @@ generic-app-chart:
     # renovate: datasource=docker depName=ghcr.io/dackota/change-tracking-dashboard
     tag: "0.10.4"
 
-  # The bespoke chart hardcoded uid/gid 65534 ("nobody") in its pod
-  # securityContext; generic-app-chart's own default is 10001. Overriding
-  # this avoids an ownership mismatch against the already-formatted Longhorn
-  # volume (see persistence below) on cutover.
+  # The app process runs as uid/gid 65534 ("nobody"), as the bespoke chart
+  # hardcoded; generic-app-chart's own default is 10001. Setting these (with
+  # fsGroup 65534) makes the kubelet chown the freshly provisioned Longhorn
+  # volume to the app's uid/gid so it can read/write /data (see persistence
+  # below).
   podSecurityContext:
     runAsUser: 65534
     runAsGroup: 65534
@@ -84,24 +85,26 @@ generic-app-chart:
       cpu: 200m
       memory: 128Mi
 
-  # existingClaim makes generic-app-chart's PVC template skip creating a new
-  # PVC and instead mount the already-bound live PVC
-  # change-tracking-dashboard-data (1Gi, Longhorn) holding the real SQLite
-  # change-history DB. This must never become a fresh empty PVC — that would
-  # be data loss on the live app.
+  # The chart owns this PVC: generic-app-chart renders a PersistentVolumeClaim
+  # named after the chart fullname (change-tracking-dashboard; 1Gi, Longhorn,
+  # RWO) and mounts it at /data. Because the PVC is now part of the rendered
+  # source, ArgoCD reconciles it in place and the Application stays InSync —
+  # no more out-of-source PVC, and no git-invisible
+  # argocd.argoproj.io/sync-options: Prune=false annotation to maintain by
+  # hand (the pre-existingClaim design that left this app permanently
+  # OutOfSync).
   #
-  # Load-bearing, git-invisible prerequisite: since existingClaim means this
-  # chart renders zero PVC, the live PVC change-tracking-dashboard-data has
-  # been annotated in-cluster (not expressible in this repo) with
-  # argocd.argoproj.io/sync-options: Prune=false, so this Application's
-  # automated: {prune: true, selfHeal: true} sync policy
-  # (applicationsets/workloads.yaml) never deletes it once it drops out of
-  # the rendered manifest. Recreating this PVC (disaster recovery) or
-  # repointing existingClaim at a different pre-existing PVC requires
-  # re-applying that same annotation by hand, or ArgoCD will prune it.
+  # The dashboard's SQLite change-history DB (/data/changes.db) is fully
+  # regenerable: on startup the poller re-clones this repo (into ephemeral
+  # storage, not /data) and backfills up to backfillDays of history (see
+  # config.yaml), so a fresh empty volume rebuilds the entire feed. That makes
+  # the volume disposable — migrating off the old change-tracking-dashboard-data
+  # PVC (deleting it and letting the chart provision this one) costs only a
+  # brief re-backfill, not real data loss.
   persistence:
     enabled: true
-    existingClaim: change-tracking-dashboard-data
+    size: 1Gi
+    storageClass: longhorn
     mountPath: /data
 
   # Tracker config (hot-reloaded), moved verbatim from the bespoke chart's

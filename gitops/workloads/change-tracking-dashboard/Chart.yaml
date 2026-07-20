@@ -6,8 +6,8 @@ description: >-
   faceted, time-ordered feed, consumed as a thin OCI dependency on the
   published generic-app-chart. Proves the chart's full app-owned
   routing/TLS model end-to-end against a real stateful workload: Deployment,
-  Service, ConfigMap, PersistentVolumeClaim (an existing, already-bound
-  Longhorn claim), HTTPRoute, and cert-manager Certificate all rendered by
+  Service, ConfigMap, PersistentVolumeClaim (a chart-owned Longhorn claim),
+  HTTPRoute, and cert-manager Certificate all rendered by
   the chart from this app's own values, reachable over HTTPS through the
   shared Gateway.
 type: application
