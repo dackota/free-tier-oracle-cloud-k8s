@@ -1,0 +1,19 @@
+# Gateway API requires a ReferenceGrant for the shared Traefik Gateway (in the
+# `traefik` namespace) to read this namespace's TLS Secret via the websecure
+# listener's cross-namespace certificateRefs. Without it the listener silently
+# won't pick up job-intel-tls. (generic-app-chart renders this for proof-app /
+# change-tracking-dashboard; this umbrella chart renders its own.)
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: job-intel-gateway-cert
+  namespace: {{ .Release.Namespace }}
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: {{ .Values.routing.gateway.namespace }}
+  to:
+    - group: ""
+      kind: Secret
+      name: job-intel-tls

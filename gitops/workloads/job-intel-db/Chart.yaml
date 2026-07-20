@@ -1,0 +1,11 @@
+apiVersion: v2
+name: job-intel-db
+description: >-
+  Postgres 16 with the pgvector extension, backing the job-intel pipeline. One
+  database serves both Dagster's run/event storage and the app's tables +
+  embeddings. Local chart (no external dependency): a StatefulSet with a
+  Longhorn-backed volumeClaimTemplate and a headless Service. The Postgres
+  password is a git-invisible prerequisite Secret (see this dir's README),
+  consistent with the repo's out-of-band secret convention.
+type: application
+version: 0.1.0

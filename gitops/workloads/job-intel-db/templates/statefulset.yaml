@@ -1,0 +1,65 @@
+# Single-replica Postgres StatefulSet. A StatefulSet (not a Deployment) gives a
+# stable identity and a volumeClaimTemplate for the Longhorn PVC — the right
+# shape for a database. pgvector/pgvector ships the `vector` extension; the
+# app's `schema` asset runs CREATE EXTENSION IF NOT EXISTS vector.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: job-intel-db
+  namespace: {{ .Release.Namespace }}
+spec:
+  serviceName: job-intel-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: job-intel-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: job-intel-db
+    spec:
+      containers:
+        - name: postgres
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.user | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  # Same key the Dagster Helm chart expects (postgresqlSecretName),
+                  # so one Secret serves both this DB and Dagster's storage config.
+                  key: postgresql-password
+            # Keep PGDATA in a subdir so Longhorn's lost+found doesn't collide
+            # with initdb's empty-dir check.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "{{ .Values.user }}", "-d", "{{ .Values.database }}"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "{{ .Values.user }}", "-d", "{{ .Values.database }}"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}

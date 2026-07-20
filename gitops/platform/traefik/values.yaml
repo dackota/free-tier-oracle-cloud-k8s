@@ -88,6 +88,12 @@ traefik:
           - kind: Secret
             name: change-tracking-dashboard-tls
             namespace: change-tracking-dashboard
+          # job-intel Dagit UI (jobs.<baseDomain>). Cert renders in the
+          # job-intel namespace; a ReferenceGrant there permits this
+          # cross-namespace ref (gitops/workloads/job-intel/templates/referencegrant.yaml).
+          - kind: Secret
+            name: job-intel-tls
+            namespace: job-intel
   # Data-plane Service stays LoadBalancer (chart default) — provisions the
   # single Always Free OCI LB. Pinned to the flexible shape at the free-tier
   # 10 Mbps cap (a fixed shape is billable; a second LB of any shape exceeds

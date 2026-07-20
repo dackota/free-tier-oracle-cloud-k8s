@@ -1,0 +1,20 @@
+# Expose the Dagit UI over HTTPS through the shared Traefik Gateway (ADR 0001
+# app-owned routing/TLS model). The cert below terminates TLS; this route
+# attaches to the `websecure` listener in the app's own namespace (labelled
+# gateway-access: "true" by the workloads ApplicationSet).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: job-intel
+  namespace: {{ .Release.Namespace }}
+spec:
+  parentRefs:
+    - name: {{ .Values.routing.gateway.name }}
+      namespace: {{ .Values.routing.gateway.namespace }}
+      sectionName: {{ .Values.routing.gateway.sectionName }}
+  hostnames:
+    - {{ .Values.routing.hostname | quote }}
+  rules:
+    - backendRefs:
+        - name: {{ .Values.routing.serviceName }}
+          port: {{ .Values.routing.servicePort }}
