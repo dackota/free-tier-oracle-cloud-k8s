@@ -97,7 +97,7 @@ resource "helm_release" "argocd" {
   name             = "argocd"
   repository       = "https://argoproj.github.io/argo-helm"
   chart            = "argo-cd"
-  version          = "10.1.2" # pinned — see the values-sync contract above
+  version          = "10.1.3" # pinned — see the values-sync contract above
   namespace        = "argocd"
   create_namespace = true
 
@@ -107,6 +107,18 @@ resource "helm_release" "argocd" {
   values = [yamlencode(local.argocd_helm_values)]
 
   depends_on = [oci_containerengine_node_pool.main]
+
+  # Bootstrap-once: this resource performs the INITIAL install only. Immediately
+  # afterward the argocd self-management add-on (gitops/platform/argocd, R22)
+  # takes over driving this same Helm release via GitOps. Ignore all subsequent
+  # changes so Terraform never contends with ArgoCD for ownership — a routine
+  # `plan`/`apply` must not try to "correct" (or, on a failed read, re-create) a
+  # release ArgoCD now manages. The VALUES-SYNC CONTRACT above still governs
+  # keeping local.argocd_helm_values aligned with the self-management chart; it
+  # is the contract, not Terraform, that keeps the two in agreement post-handoff.
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 # R18/R21 (revised by ADR 0005): the single bootstrap Application. Applied via

@@ -6,7 +6,7 @@
 resource "oci_containerengine_cluster" "main" {
   name               = "${local.name}-cluster"
   compartment_id     = oci_core_vcn.main.compartment_id
-  kubernetes_version = "v1.36.0"
+  kubernetes_version = "v1.36.1"
   type               = "BASIC_CLUSTER"
 
   # No policy-based image verification for this homelab-scale cluster.
