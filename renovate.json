@@ -4,7 +4,10 @@
   "dependencyDashboard": true,
   "automerge": false,
   "platformAutomerge": true,
+  "automergeStrategy": "squash",
   "minimumReleaseAge": "5 days",
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 0,
   "packageRules": [
     {
       "description": "Chart.yaml OCI chart-dependency bumps re-vendor charts/*.tgz + Chart.lock in the same PR, so the archive never drifts from the pinned version.",
