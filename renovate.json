@@ -42,7 +42,9 @@
     {
       "customType": "regex",
       "description": "Track the pinned change-tracking-dashboard image tag via its renovate: annotation comment, independent of the chart dependency stream above.",
-      "fileMatch": ["^gitops/workloads/change-tracking-dashboard/values\\.yaml$"],
+      "managerFilePatterns": [
+        "/^gitops/workloads/change-tracking-dashboard/values\\.yaml$/"
+      ],
       "matchStrings": [
         "#\\s*renovate:\\s*datasource=(?<datasource>docker)\\s+depName=(?<depName>ghcr\\.io/dackota/change-tracking-dashboard)\\s*\\n\\s*tag:\\s*[\"']?(?<currentValue>[^\"'\\s]+)[\"']?"
       ]
