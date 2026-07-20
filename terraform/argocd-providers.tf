@@ -39,6 +39,19 @@ locals {
     yamldecode(data.oci_containerengine_cluster_kube_config.main.content)["clusters"][0]["cluster"]["certificate-authority-data"]
   )
 
+  # OKE's public API endpoint is a bare IP (endpoints[0].public_endpoint), but
+  # the API server certificate is issued to CN=kubernetes.default with SANs for
+  # kubernetes[.default[.svc...]] — see `openssl x509 -ext subjectAltName`. The
+  # strict Go x509 verification in the helm and kubectl providers refuses to
+  # match that cert against an IP host and fails with
+  # `x509: "kubernetes.default" certificate is not standards compliant`, which
+  # surfaces as the kubectl provider erroring on read and the helm provider
+  # silently treating the release as absent (planning a spurious re-create).
+  # Pinning the TLS server name to a name the cert actually carries makes
+  # verification pass over SNI without resorting to `insecure`. Shared by both
+  # providers so they can't drift.
+  argocd_tls_server_name = "kubernetes.default"
+
   # Shared across both providers below so the exec invocation can't
   # drift between them.
   argocd_exec_args = ["ce", "cluster", "generate-token", "--cluster-id", oci_containerengine_cluster.main.id, "--region", var.region]
@@ -70,6 +83,7 @@ provider "helm" {
   kubernetes = {
     host                   = local.argocd_cluster_host
     cluster_ca_certificate = local.argocd_cluster_ca_certificate
+    tls_server_name        = local.argocd_tls_server_name
 
     exec = {
       api_version = "client.authentication.k8s.io/v1beta1"
@@ -89,6 +103,7 @@ provider "helm" {
 provider "kubectl" {
   host                   = local.argocd_cluster_host
   cluster_ca_certificate = local.argocd_cluster_ca_certificate
+  tls_server_name        = local.argocd_tls_server_name
   load_config_file       = false
 
   exec {

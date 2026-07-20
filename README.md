@@ -223,24 +223,36 @@ kubectl --context <ctx> -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath='{.data.password}' | base64 -d
 ```
 
-## OKE node-cycle / upgrade runbook
+## Upgrading Kubernetes / cycling nodes
 
-OKE node pools are cycled manually, one node at a time, to pick up a new
-Kubernetes version or node image without an outage:
+Bumping the Kubernetes version is a Terraform edit (control plane) followed by a
+one-at-a-time worker-node replacement (`terraform apply` does **not** touch
+running nodes). The full procedure, constraints, and pre-flight checks live in
+**[docs/kubernetes-upgrades.md](docs/kubernetes-upgrades.md)**.
 
-1. `kubectl --context <ctx> cordon <node>` the node being replaced, then
+After the apply, cycle the worker nodes with the Longhorn- and free-tier-aware
+helper (dry-run first; it prompts before terminating each node):
+
+```bash
+scripts/cycle-nodes.sh --dry-run   # review plan + node order, mutate nothing
+scripts/cycle-nodes.sh             # gate on Longhorn → cordon → drain →
+                                   # terminate → wait for replacement → repeat
+```
+
+Manual fallback, one node at a time (what the script automates):
+
+1. `kubectl --context <ctx> cordon <node>`, then
    `kubectl --context <ctx> drain <node> --ignore-daemonsets --delete-emptydir-data`.
-2. In the OCI Console, open the node pool and **terminate** that node
-   (do not delete the whole node pool). OKE brings up a replacement node
-   automatically per the node pool's configuration.
-3. Wait for the new node to reach `Ready`:
-   `kubectl --context <ctx> get nodes -w`.
-4. **Wait for Longhorn to finish resyncing replicas** onto the new node
-   before touching the next one — check the Longhorn UI (or
-   `kubectl --context <ctx> -n longhorn-system get volumes.longhorn.io`) for
-   all volumes back to `Healthy`/fully-replicated. Cycling the next node
-   before resync completes risks a volume with too few healthy replicas.
-5. Repeat steps 1-4 for the remaining node(s), one at a time.
+2. Terminate that node's instance (OCI Console node-pool action, or
+   `oci compute instance terminate --instance-id <ocid> --preserve-boot-volume false`
+   — **boot volume must be deleted**, or the replacement breaches the 200 GB /
+   2-volume cap). OKE brings up a replacement automatically. Do **not** delete
+   the whole node pool.
+3. Wait for the new node to reach `Ready`: `kubectl --context <ctx> get nodes -w`.
+4. **Wait for Longhorn to finish resyncing replicas** before touching the next
+   node — `kubectl --context <ctx> -n longhorn-system get volumes.longhorn.io`
+   all back to `healthy`. Cycling early risks a volume with too few replicas.
+5. Repeat for the remaining node(s), one at a time.
 
 ## Security
 

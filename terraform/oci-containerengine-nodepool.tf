@@ -61,9 +61,16 @@ resource "oci_containerengine_node_pool" "main" {
     # real scar from the reference: OCI publishes many node images per
     # compartment and there is no simpler filter than string-matching the
     # image name. Ported verbatim -- do not hand-simplify.
+    #
+    # The OS is pinned to "Oracle-Linux-8.10" (not bare "Oracle-Linux") on
+    # purpose: OKE publishes MULTIPLE OS variants per Kubernetes version
+    # (e.g. v1.36.1 ships both OL 8.10 and OL 9.7 aarch64 images), so a bare
+    # match would make the [0] pick nondeterministic and could silently jump
+    # the OS major version on a routine k8s upgrade. Bumping the OS is a
+    # deliberate, reviewed change -- edit this literal, same as the version.
     image_id = try(([for s in data.oci_containerengine_node_pool_option.node_pool_options.sources : s.image_id if
       strcontains(s.source_name, "aarch64") &&
-      strcontains(s.source_name, "Oracle-Linux") &&
+      strcontains(s.source_name, "Oracle-Linux-8.10") &&
       !strcontains(s.source_name, "GPU") &&
       strcontains(s.source_name, "OKE-${trimprefix(oci_containerengine_cluster.main.kubernetes_version, "v")}")
     ])[0], null)
