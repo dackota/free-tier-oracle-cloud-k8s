@@ -131,6 +131,59 @@ generic-app-chart:
                   # `email:`/`domain:` string) are skipped instead of erroring
                   # on `.value.image` — jq `and` short-circuits before indexing.
                   expr: 'to_entries | map(select((.value | type) == "object" and (.value.image | type) == "object" and .value.image.tag != null)) | map({(.key): .value.image.tag}) | add'
+            # Terraform/OCI infra. This tracker's `engine` is unset, so the
+            # poller auto-detects the extractor per-glob from the file suffix
+            # (extractor.InferEngine): the `.tf` glob selects the `hcl` engine
+            # while the Chart.yaml/values.yaml globs above stay on jq. HCL
+            # `expr`s are structural traversal paths (block type + labels ->
+            # attribute), NOT jq. Each field resolves to a single scalar; a
+            # path that doesn't exist in a given .tf file is recorded as absent
+            # (no spurious change), so one glob + all fields is safe even
+            # though each field lives in only one file. Verified against the
+            # live files with the hclextract engine before committing.
+            #
+            # Field NAMES are deliberately kebab-case (not this repo's usual
+            # camelCase): the dashboard's compiled-in risk classifier
+            # (changeset.DefaultRiskRules) matches word-boundaried regexes
+            # against the field name — e.g. `\bocpus?\b`, `\bsize\b`,
+            # `boot[_-]?volume`, `node[_-]?shape\b` — so `node-pool-ocpus`
+            # trips the "cost tripwire" badge while a camelCase `nodeOcpus`
+            # (no internal word boundary) would NOT. Names echo the underlying
+            # HCL attribute, matching the classifier's shipped OCI conventions.
+            - glob: "terraform/*.tf"
+              fields:
+                # Provider + Terraform version pins (versions.tf) — the surface
+                # renovate bumps (e.g. PR #46, oci -> v8). No risk badge (a
+                # provider bump isn't a cost/security/replace signal).
+                - name: terraform-required-version
+                  expr: "terraform.required_version"
+                - name: oci-provider-version
+                  expr: "terraform.required_providers.oci.version"
+                - name: helm-provider-version
+                  expr: "terraform.required_providers.helm.version"
+                - name: kubectl-provider-version
+                  expr: "terraform.required_providers.kubectl.version"
+                # OKE control-plane Kubernetes version (oci-containerengine-cluster.tf)
+                # — pinned literal; upgrades are deliberate, reviewed changes
+                # (e.g. the v1.36.1 bump), exactly the kind of change to surface.
+                - name: kubernetes-version
+                  expr: "resource.oci_containerengine_cluster.main.kubernetes_version"
+                # Always-Free node-pool cost tripwires (oci-containerengine-nodepool.tf):
+                # node count, shape, per-node OCPU/memory, and boot volume size.
+                # Any change here risks breaching the free-tier allowance, so
+                # they are the highest-signal infra fields to watch. node-shape
+                # trips the "replace/destroy" risk badge (a shape change forces
+                # node replacement); the rest trip "cost tripwire".
+                - name: node-pool-size
+                  expr: "resource.oci_containerengine_node_pool.main.node_config_details.size"
+                - name: node-shape
+                  expr: "resource.oci_containerengine_node_pool.main.node_shape"
+                - name: node-pool-ocpus
+                  expr: "resource.oci_containerengine_node_pool.main.node_shape_config.ocpus"
+                - name: node-pool-memory-in-gbs
+                  expr: "resource.oci_containerengine_node_pool.main.node_shape_config.memory_in_gbs"
+                - name: node-pool-boot-volume-size
+                  expr: "resource.oci_containerengine_node_pool.main.node_source_details.boot_volume_size_in_gbs"
 
   extraVolumes:
     - name: config
