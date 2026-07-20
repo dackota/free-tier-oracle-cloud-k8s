@@ -1,10 +1,13 @@
 name: PR CI
 
-# Required check gating merge/auto-merge of every gitops PR (R28). Renders
-# every chart under gitops/platform/* and gitops/workloads/* with Helm and
-# validates the output against upstream Kubernetes schemas plus the Gateway
-# API + cert-manager CRD schemas those charts install/consume, so an invalid
-# manifest can never reach ArgoCD.
+# Required checks gating merge/auto-merge of every PR (R28):
+#   - validate-charts: renders every chart under gitops/platform/* and
+#     gitops/workloads/* with Helm and validates the output against upstream
+#     Kubernetes schemas plus the Gateway API + cert-manager CRD schemas those
+#     charts install/consume, so an invalid manifest can never reach ArgoCD.
+#   - validate-terraform: runs `terraform validate` against the pinned provider
+#     schemas so a provider bump that breaks the config can't auto-merge (see
+#     the job comment for the -backend=false / no-credentials rationale).
 #
 # Runs on every PR regardless of the paths touched (no `paths:` filter) so
 # the check always reports a result — a filtered trigger would leave this
@@ -120,3 +123,33 @@ jobs:
             echo "::endgroup::"
           done <<< "$(find gitops -mindepth 2 -maxdepth 3 -name Chart.yaml -exec dirname {} \; | sort -u)"
           exit "$failed"
+
+  validate-terraform:
+    # Gates auto-merge of terraform provider bumps (the terraform automerge
+    # rule in renovate.json): `terraform validate` re-checks the config against
+    # the provider schemas the bumped version ships, catching a removed/renamed
+    # argument before it merges. Like validate-charts it runs on every PR (no
+    # paths filter) so this required check always reports a result.
+    #
+    # `init -backend=false` installs the pinned providers but skips the s3
+    # backend (versions.tf) -- validate needs provider schemas, not the remote
+    # state, so no OCI/backend credentials are required. validate makes no API
+    # calls either, so it needs no provider auth.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "1.15.8"
+          terraform_wrapper: false
+
+      - name: terraform init (no backend) + validate
+        working-directory: terraform
+        run: |
+          set -euo pipefail
+          terraform init -backend=false -input=false
+          terraform validate -no-color
