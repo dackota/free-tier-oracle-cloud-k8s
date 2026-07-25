@@ -188,6 +188,21 @@ generic-app-chart:
                 - name: node-pool-boot-volume-size
                   expr: "resource.oci_containerengine_node_pool.main.node_source_details.boot_volume_size_in_gbs"
 
+      # Config-driven risk rules (change-tracking-dashboard PR #120). These are
+      # APPENDED to the app's built-in DefaultRiskRules, not a replacement — the
+      # shipped OCI cost/replace/security rules and the provider-agnostic
+      # semver-major-bump rule (which already flags any chart/image 1.x -> 2.x
+      # jump) all still apply. This block adds the one high-signal infra change
+      # the built-ins don't cover: a deliberate OKE control-plane Kubernetes
+      # upgrade (e.g. the real v1.36.0 -> v1.36.1 bump already in this repo's
+      # history). Safely ignored by app images that predate the feature —
+      # unknown top-level YAML keys are skipped, not rejected.
+      riskRules:
+        - name: kubernetes-control-plane-upgrade
+          risk: control-plane upgrade
+          fieldPattern: ^kubernetes-version$
+          changeTypes: [modified]
+
   extraVolumes:
     - name: config
       configMap:
