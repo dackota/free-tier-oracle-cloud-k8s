@@ -29,8 +29,13 @@ generic-app-chart:
   nameOverride: change-tracking-dashboard
 
   image:
+    # Renovate tracks this tag via its built-in helm-values manager (the
+    # repository/tag pair below is all it needs); a custom regex manager used
+    # to double-manage this same line, which broke digest pinning — the regex
+    # manager captured no currentDigest group, so `pinDigests` (inherited from
+    # config:best-practices) failed to write one and errored the whole
+    # pin-dependencies branch.
     repository: ghcr.io/dackota/change-tracking-dashboard
-    # renovate: datasource=docker depName=ghcr.io/dackota/change-tracking-dashboard
     tag: "0.13.0"
 
   # The app process runs as uid/gid 65534 ("nobody"), as the bespoke chart
