@@ -32,6 +32,11 @@ traefik:
       #                                            Certificate now renders in its own namespace too;
       #                                            cross-namespace per ADR 0001, hence the explicit
       #                                            `namespace` below)
+      #   - consulting-spa-tls (ns consulting-spa) -> consulting.<baseDomain>
+      #                                            (consulting-spa, deployed fresh onto
+      #                                            generic-app-chart — #65 — so its Certificate renders
+      #                                            in its own namespace; cross-namespace per ADR 0001,
+      #                                            hence the explicit `namespace` below)
       #
       # NOTE: the old `traefik-gateway-tls` Secret (this `traefik` namespace)
       # is now orphaned by the R32 migration above — cert-manager does not
@@ -88,6 +93,9 @@ traefik:
           - kind: Secret
             name: change-tracking-dashboard-tls
             namespace: change-tracking-dashboard
+          - kind: Secret
+            name: consulting-spa-tls
+            namespace: consulting-spa
   # Data-plane Service stays LoadBalancer (chart default) — provisions the
   # single Always Free OCI LB. Pinned to the flexible shape at the free-tier
   # 10 Mbps cap (a fixed shape is billable; a second LB of any shape exceeds
