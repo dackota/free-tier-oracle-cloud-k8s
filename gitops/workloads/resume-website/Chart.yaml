@@ -1,0 +1,18 @@
+apiVersion: v2
+name: resume-website
+description: >-
+  resume-website — Dackota Johnson's interactive resume
+  (https://github.com/dackota/resume-website), the resume presented as a
+  platform console (kubectl hero, career promotion pipeline, interactive
+  terminal), a static single-page site served by unprivileged nginx at
+  me.dackota.com. A thin OCI dependency on the published generic-app-chart,
+  following the same app-owned routing/TLS model as consulting-spa:
+  Deployment, Service, HTTPRoute, and cert-manager Certificate all rendered
+  by the chart from this app's values, reachable over HTTPS through the
+  shared Gateway. Stateless — no PVC, no config beyond the image itself.
+type: application
+version: 0.1.0
+dependencies:
+  - name: generic-app-chart
+    version: 0.4.0
+    repository: oci://ghcr.io/dackota/charts
