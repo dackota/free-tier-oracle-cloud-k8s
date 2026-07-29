@@ -79,12 +79,24 @@ generic-app-chart:
     initialDelaySeconds: 5
     periodSeconds: 10
 
-  # Existing production override (already live today) — the bespoke chart's
-  # own chart-level default was 50m/64Mi; the gitops values already
-  # overrode requests to 25m. Preserved as-is, not reverted to any default.
+  # The bespoke chart's own chart-level default was 50m/64Mi; the gitops values
+  # overrode requests to 25m.
+  #
+  # cpu request raised 25m -> 75m to match what this pod actually draws. It is
+  # not a steady 1-2m workload: each poll cycle saturates its 200m limit for
+  # ~3m22s (sampled every 15s in prod, 199-200m the whole way), so the average
+  # over a 600s interval is ~70m — a ~34% duty cycle the scheduler had no idea
+  # about at a 25m request. See dackota/change-tracking-dashboard#137 for the
+  # underlying cause (the poller re-walks each file's git history once per
+  # tracked field). Once #137 ships this can drop back toward 25m.
+  #
+  # The 200m limit is deliberately left alone. The poller is a background batch
+  # job, so throttling it is the correct outcome on a 2-node Always-Free
+  # cluster — raising the limit would just let it take a bigger bite out of the
+  # node during its burst.
   resources:
     requests:
-      cpu: 25m
+      cpu: 75m
       memory: 64Mi
     limits:
       cpu: 200m
@@ -120,7 +132,19 @@ generic-app-chart:
   config:
     config.yaml: |
       defaults:
-        pollIntervalSeconds: 600
+        # 600 -> 3600 as an interim mitigation for
+        # dackota/change-tracking-dashboard#137: one poll cycle currently costs
+        # ~52 CPU-seconds (229 full git-history walks, 210 of them the terraform
+        # tracker re-walking the same 21 files once per tracked field), which
+        # throttled to the 200m limit means ~3m22s of saturated CPU. At a 600s
+        # interval that is a ~34% duty cycle spent re-deriving history for a repo
+        # that sees a handful of commits a day. 3600 cuts the waste 6x for free.
+        #
+        # Tradeoff: a new commit now takes up to an hour to appear in the feed
+        # instead of ten minutes. Acceptable for a change-history dashboard, but
+        # revert this to 600 once #137 lands — the fix drops a cycle to roughly
+        # 5 CPU-seconds, at which point a 10-minute interval is cheap again.
+        pollIntervalSeconds: 3600
         backfillDays: 90
       trackers:
         - repo: https://github.com/dackota/free-tier-oracle-cloud-k8s.git
