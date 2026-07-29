@@ -1,0 +1,68 @@
+# resume-website: Dackota Johnson's interactive resume
+# (ghcr.io/dackota/resume-website) at me.dackota.com — a stateless static
+# site on unprivileged nginx, deployed fresh onto generic-app-chart exactly
+# like consulting-spa (no bespoke-chart migration, so no nameOverride
+# needed). Values nest under the `generic-app-chart:` dependency key
+# (Helm's standard subchart-values convention).
+generic-app-chart:
+  # Keeps every rendered resource named "resume-website" instead of the
+  # chart's default "resume-website-generic-app-chart" (R2: <release>-<chart>).
+  fullnameOverride: resume-website
+
+  image:
+    # Renovate tracks this tag via its built-in helm-values manager; new
+    # releases of dackota/resume-website (tag v*) publish this image.
+    repository: ghcr.io/dackota/resume-website
+    tag: "0.1.0"
+
+  # The image's nginx.conf keeps pid/temp paths under /tmp specifically so
+  # the chart's strict defaults (arbitrary non-root uid,
+  # readOnlyRootFilesystem, automatic /tmp emptyDir) apply unmodified — no
+  # podSecurityContext/containerSecurityContext overrides here.
+
+  # Static files from memory; tiny footprint on the capacity-constrained
+  # free-tier node, matching the repo-wide small-requests pattern.
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+  service:
+    ports:
+      - name: http
+        port: 8080
+        targetPort: 8080
+        protocol: TCP
+
+  # /healthz is a dedicated no-log probe endpoint in the image's nginx.conf.
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    periodSeconds: 15
+  readinessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    periodSeconds: 10
+
+  # Expose over HTTPS through the lab's one shared Traefik Gateway, in this
+  # app's own namespace (ADR 0001 app-owned routing/TLS model). DNS already
+  # resolves via the existing wildcard record. The resume-website-tls Secret
+  # this renders is also listed in the Gateway's websecure certificateRefs
+  # (gitops/platform/traefik/values.yaml) — without that, the Gateway serves
+  # a self-signed cert for this hostname.
+  routing:
+    enabled: true
+    hostnames:
+      - me.dackota.com
+    gateway:
+      name: traefik-gateway
+      namespace: traefik
+      sectionName: websecure
+    tls:
+      issuerRef:
+        name: letsencrypt-prod

@@ -37,6 +37,12 @@ traefik:
       #                                            generic-app-chart — #65 — so its Certificate renders
       #                                            in its own namespace; cross-namespace per ADR 0001,
       #                                            hence the explicit `namespace` below)
+      #   - resume-website-tls (ns resume-website) -> me.<baseDomain>
+      #                                            (resume-website, deployed fresh onto
+      #                                            generic-app-chart like consulting-spa, so its
+      #                                            Certificate renders in its own namespace;
+      #                                            cross-namespace per ADR 0001, hence the explicit
+      #                                            `namespace` below)
       #
       # NOTE: the old `traefik-gateway-tls` Secret (this `traefik` namespace)
       # is now orphaned by the R32 migration above — cert-manager does not
@@ -96,6 +102,9 @@ traefik:
           - kind: Secret
             name: consulting-spa-tls
             namespace: consulting-spa
+          - kind: Secret
+            name: resume-website-tls
+            namespace: resume-website
   # Data-plane Service stays LoadBalancer (chart default) — provisions the
   # single Always Free OCI LB. Pinned to the flexible shape at the free-tier
   # 10 Mbps cap (a fixed shape is billable; a second LB of any shape exceeds
