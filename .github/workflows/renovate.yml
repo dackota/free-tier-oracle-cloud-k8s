@@ -26,13 +26,45 @@ on:
   schedule:
     - cron: "0 5 * * *"
   workflow_dispatch:
+  # Renovate's rebase/retry checkbox (PR body) and the Dependency Dashboard
+  # checkboxes (issue body) are just edits to markdown -- a self-hosted runner
+  # only notices them on its next scheduled run. Firing on `edited` makes a tick
+  # take effect immediately; the job-level `if` below keeps it to actual ticks.
+  #
+  # `pull_request_target` (not `pull_request`) so the workflow definition is
+  # always read from main rather than from the PR's head branch: PRs opened
+  # before this change would otherwise never carry the trigger. It never checks
+  # out PR content, and GITHUB_TOKEN stays `contents: read` (Renovate itself
+  # authenticates with the minted App token), so the usual pull_request_target
+  # privilege-escalation footgun does not apply.
+  pull_request_target:
+    types: [edited]
+  issues:
+    types: [edited]
 
 permissions:
   contents: read
 
+# Never let a checkbox-triggered run race the nightly schedule (or another
+# checkbox); Renovate is not safe to run concurrently against one repo.
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
 jobs:
   renovate:
     runs-on: ubuntu-latest
+    # Only act on a *ticked* box on one of our own bot's PRs/dashboard issue.
+    # Renovate unticks the box as it processes it, so the resulting edit event
+    # has no `- [x]` left and the workflow does not re-trigger itself.
+    if: >-
+      (github.event_name != 'pull_request_target' && github.event_name != 'issues') ||
+      (github.event_name == 'pull_request_target' &&
+        github.event.pull_request.user.login == 'dk-renovate-bot[bot]' &&
+        contains(github.event.pull_request.body, '- [x] <!-- rebase-check -->')) ||
+      (github.event_name == 'issues' &&
+        github.event.issue.user.login == 'dk-renovate-bot[bot]' &&
+        contains(github.event.issue.body, '- [x]'))
     steps:
       - name: Generate a token for the dk-renovate-bot App
         id: app-token
