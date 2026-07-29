@@ -94,9 +94,6 @@ traefik:
               gateway-access: "true"
         certificateRefs:
           - kind: Secret
-            name: proof-app-tls
-            namespace: proof-app
-          - kind: Secret
             name: change-tracking-dashboard-tls
             namespace: change-tracking-dashboard
           - kind: Secret
