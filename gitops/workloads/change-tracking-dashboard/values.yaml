@@ -65,16 +65,27 @@ generic-app-chart:
         targetPort: 8080
         protocol: TCP
 
-  # Matches the live Deployment's actual probes exactly.
+  # Probes target /healthz, not /.
+  #
+  # /healthz is the app's dependency-free liveness route, and the app's
+  # telemetry middleware marks it a quiet route so probe traffic does not
+  # emit a request log line ~10x/minute.
+  #
+  # Probing / (the full timeline page) produced a steady stream of ERROR logs:
+  # kubelet closes the probe connection as soon as it has the status code and
+  # never drains the body, so every probe aborted the template write mid-body
+  # and the handler logged "web: render timeline template: write tcp ...:
+  # broken pipe / connection reset by peer". Probing / also ran the timeline's
+  # store queries on every probe for no diagnostic benefit.
   livenessProbe:
     httpGet:
-      path: /
+      path: /healthz
       port: http
     initialDelaySeconds: 5
     periodSeconds: 15
   readinessProbe:
     httpGet:
-      path: /
+      path: /healthz
       port: http
     initialDelaySeconds: 5
     periodSeconds: 10
