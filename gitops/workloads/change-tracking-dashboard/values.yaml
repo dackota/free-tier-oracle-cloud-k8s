@@ -93,13 +93,19 @@ generic-app-chart:
   # The bespoke chart's own chart-level default was 50m/64Mi; the gitops values
   # overrode requests to 25m.
   #
-  # cpu request raised 25m -> 75m to match what this pod actually draws. It is
-  # not a steady 1-2m workload: each poll cycle saturates its 200m limit for
-  # ~3m22s (sampled every 15s in prod, 199-200m the whole way), so the average
-  # over a 600s interval is ~70m — a ~34% duty cycle the scheduler had no idea
-  # about at a 25m request. See dackota/change-tracking-dashboard#137 for the
-  # underlying cause (the poller re-walks each file's git history once per
-  # tracked field). Once #137 ships this can drop back toward 25m.
+  # cpu request was raised 25m -> 75m because this is not a steady 1-2m
+  # workload: pre-fix, each poll cycle saturated its 200m limit for ~3m22s
+  # (sampled every 15s in prod, 199-200m the whole way), averaging ~70m over a
+  # 600s interval — a ~34% duty cycle the scheduler had no idea about at a 25m
+  # request. dackota/change-tracking-dashboard#137 was the cause (the poller
+  # re-walked each file's git history once per tracked field).
+  #
+  # #137 shipped in v0.13.2, so 75m is now conservative: the heaviest possible
+  # cycle (startup clone + 90-day backfill) measured ~80s at 200m, so ~27m
+  # average over the 600s interval restored below, and steady polls are
+  # cheaper still. Left at 75m deliberately until a few steady-state cycles
+  # have been sampled at the restored interval — dropping it toward 25m is a
+  # separate, better-measured change.
   #
   # The 200m limit is deliberately left alone. The poller is a background batch
   # job, so throttling it is the correct outcome on a 2-node Always-Free
@@ -143,19 +149,20 @@ generic-app-chart:
   config:
     config.yaml: |
       defaults:
-        # 600 -> 3600 as an interim mitigation for
-        # dackota/change-tracking-dashboard#137: one poll cycle currently costs
-        # ~52 CPU-seconds (229 full git-history walks, 210 of them the terraform
-        # tracker re-walking the same 21 files once per tracked field), which
-        # throttled to the 200m limit means ~3m22s of saturated CPU. At a 600s
-        # interval that is a ~34% duty cycle spent re-deriving history for a repo
-        # that sees a handful of commits a day. 3600 cuts the waste 6x for free.
+        # Back to 600 now that dackota/change-tracking-dashboard#137 has
+        # shipped (app v0.13.2, deployed above). 3600 was only ever an interim
+        # mitigation for that bug: the poller re-walked each file's git history
+        # once per tracked field, so a cycle cost ~52 CPU-seconds (229 walks,
+        # 210 of them the terraform tracker re-walking the same 21 files) and
+        # spent ~3m22s pinned to the 200m limit — a ~34% duty cycle at a 600s
+        # interval, for a repo that sees a handful of commits a day.
         #
-        # Tradeoff: a new commit now takes up to an hour to appear in the feed
-        # instead of ten minutes. Acceptable for a change-history dashboard, but
-        # revert this to 600 once #137 lands — the fix drops a cycle to roughly
-        # 5 CPU-seconds, at which point a 10-minute interval is cheap again.
-        pollIntervalSeconds: 3600
+        # Post-fix the poller walks once per glob. Measured on v0.13.2: a fresh
+        # pod's startup cycle (clone + 90-day backfill + first poll, the
+        # heaviest cycle there is) saturates 200m for ~80s, down from ~202s.
+        # A steady poll skips the clone and backfill, so the ~13% worst-case
+        # duty cycle at 600s is an upper bound, not the norm.
+        pollIntervalSeconds: 600
         backfillDays: 90
       trackers:
         - repo: https://github.com/dackota/free-tier-oracle-cloud-k8s.git
