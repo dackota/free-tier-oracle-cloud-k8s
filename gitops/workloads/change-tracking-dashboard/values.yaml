@@ -235,6 +235,103 @@ generic-app-chart:
                 - name: node-pool-boot-volume-size
                   expr: "resource.oci_containerengine_node_pool.main.node_source_details.boot_volume_size_in_gbs"
 
+        # The other public repos in the dackota org. Each is its own tracker
+        # entry — the config format has no org-level discovery, so every repo
+        # is listed explicitly (config.TrackerRaw: repo + files + fields).
+        #
+        # Two field shapes recur across all three, so they are defined the same
+        # way everywhere:
+        #
+        #   released-version — .release-please-manifest.json is the single
+        #     source of truth release-please writes the current version into on
+        #     every release PR merge, so it changes exactly once per release,
+        #     with the release commit. `.["."]` is the root package key (all
+        #     three repos are single-package, include-component-in-tag: false).
+        #
+        #   github-action-pins — every `uses:` in these repos is pinned to a
+        #     full commit SHA, and Renovate bumps those SHAs. The expr collects
+        #     the whole workflow's pins into one keyed field
+        #     (action -> sha) so a workflow's supply-chain surface shows up as
+        #     a single row instead of one field per action. `.steps[]?` (not
+        #     `.steps[]`) tolerates jobs that have no steps — a job calling a
+        #     reusable workflow via a job-level `uses:` — and
+        #     `select(length > 1)` drops local composite actions
+        #     (`./.github/actions/x`), which have no `@sha` half and would
+        #     otherwise record a null value.
+        #
+        # Field names are kebab-case for the same reason as the terraform
+        # fields above (the risk classifier matches word-boundaried regexes);
+        # neither of these trips a built-in rule today, which is correct — a
+        # release bump or an action SHA bump is not a cost/replace/security
+        # signal on its own.
+        #
+        # facetRegex captures the workflow filename so the timeline's facet
+        # filter can narrow to a single workflow. Files outside
+        # .github/workflows (the manifest, Chart.yaml) simply match nothing and
+        # get an empty facet map — facet.ExtractFacets never errors on a
+        # non-match.
+        - repo: https://github.com/dackota/change-tracking-dashboard.git
+          facetRegex: "\\.github/workflows/(?P<workflow>[^/]+)\\.ya?ml$"
+          files:
+            - glob: ".release-please-manifest.json"
+              fields:
+                - name: released-version
+                  expr: '.["."]'
+            - glob: ".github/workflows/*.yml"
+              fields:
+                - name: github-action-pins
+                  expr: '[.jobs[]?.steps[]?.uses] | map(select(. != null)) | map(split("@")) | map(select(length > 1)) | map({(.[0]): .[1]}) | add'
+        # generic-app-chart also gets its Chart.yaml tracked: this is the chart
+        # every workload in this repo depends on (see each workload's
+        # Chart.yaml `dependencies`), so its version is the upstream side of
+        # the chartDependencies field already tracked above — a bump here is
+        # what the gitops-repo Renovate PR later reacts to. A 1.x -> 2.x jump
+        # in `chart-version` trips the built-in semver-major-bump risk rule.
+        - repo: https://github.com/dackota/generic-app-chart.git
+          facetRegex: "\\.github/workflows/(?P<workflow>[^/]+)\\.ya?ml$"
+          files:
+            - glob: "Chart.yaml"
+              fields:
+                - name: chart-version
+                  expr: ".version"
+                - name: chart-app-version
+                  expr: ".appVersion"
+                # The minimum cluster version the chart targets. Worth
+                # watching against the tracked OKE kubernetes-version above:
+                # if this floor ever rises past the cluster, the chart stops
+                # being installable here.
+                - name: chart-kube-version
+                  expr: ".kubeVersion"
+            - glob: ".release-please-manifest.json"
+              fields:
+                - name: released-version
+                  expr: '.["."]'
+            - glob: ".github/workflows/*.yml"
+              fields:
+                - name: github-action-pins
+                  expr: '[.jobs[]?.steps[]?.uses] | map(select(. != null)) | map(split("@")) | map(select(length > 1)) | map({(.[0]): .[1]}) | add'
+        - repo: https://github.com/dackota/resume-website.git
+          facetRegex: "\\.github/workflows/(?P<workflow>[^/]+)\\.ya?ml$"
+          files:
+            - glob: ".release-please-manifest.json"
+              fields:
+                - name: released-version
+                  expr: '.["."]'
+            - glob: ".github/workflows/*.yml"
+              fields:
+                - name: github-action-pins
+                  expr: '[.jobs[]?.steps[]?.uses] | map(select(. != null)) | map(split("@")) | map(select(length > 1)) | map({(.[0]): .[1]}) | add'
+
+        # Not tracked, deliberately: dackota/dnd-cli, dackota/claude-projects,
+        # dackota/time-to-kill, and the dotfiles-mac-nix fork. The extractor
+        # only reads YAML/JSON (jq engine) and HCL (hcl engine, .tf/.tofu/
+        # .terraform.lock.hcl), and none of those repos contains a single file
+        # in either format — dnd-cli is go.mod/go.sum + Go, claude-projects is
+        # Markdown + shell, time-to-kill is Lua + a .toc. Adding them would
+        # cost a clone and a poll per cycle for zero extractable fields (and
+        # config validation rejects a tracker with no files anyway). They
+        # become trackable once the app grows an engine that can read
+        # go.mod/Dockerfile/plain-text pins.
       # Config-driven risk rules (change-tracking-dashboard PR #120). These are
       # APPENDED to the app's built-in DefaultRiskRules, not a replacement — the
       # shipped OCI cost/replace/security rules and the provider-agnostic
