@@ -36,7 +36,7 @@ generic-app-chart:
     # config:best-practices) failed to write one and errored the whole
     # pin-dependencies branch.
     repository: ghcr.io/dackota/change-tracking-dashboard
-    tag: "0.16.0@sha256:d0df19fa6d50badd10b8f2d79fcec209653b8a3e707ceee66702a554fc89f4cc"
+    tag: "0.17.0@sha256:56ba5cdc6416793ecda692eb4b370bd11af47af4c53b041c50ddc7dddfd152b7"
 
   # The app process runs as uid/gid 65534 ("nobody"), as the bespoke chart
   # hardcoded; generic-app-chart's own default is 10001. Setting these (with
