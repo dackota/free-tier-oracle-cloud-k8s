@@ -13,7 +13,7 @@ generic-app-chart:
     # Renovate tracks this tag via its built-in helm-values manager; new
     # releases of dackota/resume-website (tag v*) publish this image.
     repository: ghcr.io/dackota/resume-website
-    tag: "1.1.0@sha256:4d3b101b860be723c8a6071aa6edb359287e11612c8c7eaae78a3566935b10b3"
+    tag: "1.2.0@sha256:08ae753fb7e6079082eb92e0649193ca34112811671e39854b6eab8275cad011"
 
   # The image's nginx.conf keeps pid/temp paths under /tmp specifically so
   # the chart's strict defaults (arbitrary non-root uid,
