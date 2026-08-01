@@ -1,0 +1,120 @@
+# rpg-session-manager (Cosmere Session Runner): a GM screen for running
+# tabletop sessions, deployed as a fresh workload (not a migration off a
+# bespoke chart), so there is no pre-existing immutable Deployment selector to
+# preserve and no nameOverride needed — unlike change-tracking-dashboard,
+# whose nameOverride comment explains that case. Values nest under the
+# `generic-app-chart:` dependency key (Helm's standard subchart-values
+# convention).
+generic-app-chart:
+  # Keeps every rendered resource named "rpg-session-manager" instead of the
+  # chart's default "rpg-session-manager-generic-app-chart" (<release>-<chart>).
+  fullnameOverride: rpg-session-manager
+
+  image:
+    # Renovate tracks this tag via its built-in helm-values manager (the
+    # repository/tag pair below is all it needs); do not add a custom regex
+    # manager for this line — double-managing it is what broke digest pinning
+    # on change-tracking-dashboard.
+    repository: ghcr.io/dackota/rpg-session-manager
+    # No release has been cut yet, so there is no published tag to pin. This
+    # is a placeholder: the first release of dackota/rpg-session-manager
+    # publishes 0.1.0, and Renovate then keeps this line current (pinning a
+    # digest alongside it, per pinDigests from config:best-practices).
+    # Until that first release exists the image pull will fail — see the PR
+    # description for the ordering.
+    tag: "0.1.0"
+
+  # The launcher listens on 3000 (PORT is set in the image; the launcher's own
+  # default is 3000 too).
+  service:
+    ports:
+      - name: http
+        port: 3000
+        targetPort: 3000
+        protocol: TCP
+
+  # Probes target /manifest, not /.
+  #
+  # / serves the full 245KB index.html via createReadStream(...).pipe(res).
+  # The kubelet closes a probe connection as soon as it has the status code
+  # and never drains the body, so probing / would abort that stream mid-write
+  # on every probe — the same broken-pipe pattern that produced steady ERROR
+  # log noise on change-tracking-dashboard, except here the pipe has no error
+  # handler attached at all, so it risks more than log spam.
+  #
+  # /manifest is cheap (a small recursive walk of the content directory,
+  # returning JSON) and is a genuinely better readiness signal: it is the
+  # endpoint the session pick-list depends on, so a ready pod is one that can
+  # actually list sessions rather than merely one that is listening.
+  livenessProbe:
+    httpGet:
+      path: /manifest
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 15
+  readinessProbe:
+    httpGet:
+      path: /manifest
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+  # A Node process serving static files and doing small YAML reads for a
+  # single table's worth of traffic. Requests are deliberately modest on a
+  # 2-node Always-Free cluster; the limit leaves room for the /manifest walk
+  # and the occasional file write without letting the pod take a real bite out
+  # of a node.
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 192Mi
+
+  # The chart owns this PVC. mountPath is NOT the chart's usual /data and
+  # cannot be: launcher.mjs derives its root from its own directory and serves
+  # content from <root>/content, so the volume has to land on exactly
+  # /app/content or the launcher reads the wrong directory.
+  #
+  # What lives here is genuinely stateful and NOT regenerable from the image:
+  # .runner-state.json (playthrough state — live HP, conditions, event tracks,
+  # which scene is active), *.recap.yaml sidecars written at wrap-up, and any
+  # inline edits made to authored session YAML during a game. Losing the
+  # volume loses real session history, so this is not a disposable cache like
+  # change-tracking-dashboard's SQLite volume.
+  persistence:
+    enabled: true
+    size: 1Gi
+    storageClass: longhorn
+    mountPath: /app/content
+
+  # NOTE: there is deliberately no initContainer seeding the volume. The
+  # image's own entrypoint copies /opt/session-content into /app/content when
+  # that directory is empty, which covers the freshly provisioned PVC exactly
+  # as an initContainer would — and avoids a second copy of the image
+  # reference here. Renovate's helm-values manager bumps `image.tag` only, so
+  # an initContainer pinned to the same image would silently rot a release
+  # behind and start seeding new volumes from a stale image.
+  #
+  # The emptiness guard is what makes the seed safe on every restart: once the
+  # volume holds session state, recaps and edited YAML, seeding is a no-op.
+  #
+  # Adding content later: a new authored session baked into a new image does
+  # NOT appear automatically, because the seed only runs against an empty
+  # volume. Copy it in with `kubectl cp`, or delete the PVC to re-seed — which
+  # loses the state above.
+
+  # Cluster-internal only, by choice: this serves campaign content and live
+  # session notes with no authentication of any kind, so it is deliberately
+  # NOT attached to the shared Traefik Gateway — no HTTPRoute, no cert-manager
+  # Certificate, nothing reachable from the internet. Reach it with:
+  #
+  #   kubectl -n rpg-session-manager port-forward svc/rpg-session-manager 3000:3000
+  #
+  # The intended public hostname, if this is ever exposed, is
+  # rpg.dackota.com — but do not simply flip `enabled: true` here: the app has
+  # no auth, and /save/* accepts writes from anyone who can reach it. Put an
+  # authentication layer in front of it first.
+  routing:
+    enabled: false
