@@ -22,7 +22,7 @@ generic-app-chart:
     # digest alongside it, per pinDigests from config:best-practices).
     # Until that first release exists the image pull will fail — see the PR
     # description for the ordering.
-    tag: "1.0.3@sha256:3172a5aed7f6451ab1dc992f31ce7e85246b60c2b375436ebdba40016aacca64"
+    tag: "1.0.4@sha256:31957d05481f78e60945f0c10107efef998adb4af8f86a1c06351f3453d1b361"
 
   # The launcher listens on 3000 (PORT is set in the image; the launcher's own
   # default is 3000 too).
