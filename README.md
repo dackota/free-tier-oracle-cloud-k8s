@@ -254,6 +254,43 @@ Manual fallback, one node at a time (what the script automates):
    all back to `healthy`. Cycling early risks a volume with too few replicas.
 5. Repeat for the remaining node(s), one at a time.
 
+## Workloads with out-of-band prerequisites
+
+Most workloads under `gitops/workloads/` need nothing beyond a merged commit —
+ArgoCD discovers the directory and syncs it. **Nautobot** is the exception, and
+needs two manual steps that cannot live in this public repo:
+
+1. **Credentials.** Nautobot needs a Django secret key, database and Redis
+   passwords, and an initial superuser password/API token. There is no
+   secrets-management component here, so create them once, before the first
+   sync:
+
+   ```sh
+   scripts/bootstrap-nautobot-secrets.sh --context <kube-context>
+   ```
+
+   The script is idempotent — re-running it fills in a missing Secret and
+   leaves existing ones alone. It only rotates with `--force`, which is
+   destructive; read the header comment first. Retrieve the generated superuser
+   password from the `nautobot-superuser` Secret.
+
+   The Nautobot chart can generate these itself, but only under `helm install`:
+   it relies on a cluster `lookup` to retain previously generated values, and
+   ArgoCD renders with `helm template`, where `lookup` returns empty. Left to
+   the chart, the secret key and API token would be regenerated on every sync.
+
+2. **DNS.** Create the `nautobot.dackota.com` A record pointing at the Traefik
+   load balancer (`kubectl --context <ctx> -n traefik get svc traefik`) before
+   merging. There is no external-dns in this cluster — every host here has a
+   manually managed record — and cert-manager's HTTP-01 challenge fails and
+   backs off until the record resolves.
+
+Nautobot is also the one workload not built on `generic-app-chart`: it is a
+multi-Deployment app (web, Celery worker, Celery beat) and that chart renders a
+single Deployment per release. It runs the upstream `nautobot/nautobot` chart,
+with PostgreSQL and Redis as two separate `generic-app-chart` releases in the
+same `nautobot` namespace.
+
 ## Security
 
 - `.gitignore` is a security control, not a convenience: it excludes Terraform

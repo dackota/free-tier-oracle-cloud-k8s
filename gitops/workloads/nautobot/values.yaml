@@ -1,0 +1,301 @@
+# Nautobot. Values nest under the `nautobot:` dependency key (Helm's standard
+# subchart-values convention), and the upstream chart then has its own
+# top-level `nautobot:` section — hence the double nesting below. It reads
+# oddly but is correct: the outer key selects the subchart, the inner one is
+# the chart's own app configuration.
+#
+# Rendering this chart emits one expected, harmless warning:
+#
+#   warning: destination for nautobot.nautobot.metrics is a table.
+#   Ignoring non-table value (true)
+#
+# It comes from Helm coalescing parent values into a subchart whose own name
+# matches the values key, and it is cosmetic: overrides still win (setting
+# `metrics: false` below does render NAUTOBOT_METRICS_ENABLED: "False", which is
+# asserted by eye on every change to this file). Do not "fix" it by renaming the
+# dependency — an alias changes the subchart's .Chart.Name, and the chart
+# hardcodes its HTTPRoute backend to `nautobot-default`.
+nautobot:
+  # ---------------------------------------------------------------------------
+  # Web tier
+  # ---------------------------------------------------------------------------
+  nautobot:
+    # Chart default is 2. One replica is the right call on a 2-node Always-Free
+    # cluster, and it also sidesteps the concurrent-migration problem described
+    # under `singleInit` below.
+    replicaCount: 1
+
+    # Chart default is "*". Pinned to the real hostname now that there is one —
+    # this is Django's ALLOWED_HOSTS and is the app's own Host-header defence,
+    # independent of what the Gateway routes.
+    allowedHosts: "nautobot.dackota.com"
+
+    # Chart default is true, which serves Nautobot's Prometheus metrics at
+    # /metrics with NO authentication (Nautobot's METRICS_AUTHENTICATED setting
+    # is itself false by default). The HTTPRoute below matches PathPrefix "/",
+    # so leaving this on would publish /metrics — model counts, job execution
+    # stats, DB/cache timings — to the internet at
+    # https://nautobot.dackota.com/metrics.
+    #
+    # There is no Prometheus in this cluster to scrape it, so it is pure
+    # exposure for zero benefit. Turn this back on together with a monitoring
+    # stack, and pair it with either METRICS_AUTHENTICATED or an HTTPRoute rule
+    # that keeps /metrics off the public listener.
+    metrics: false
+
+    image:
+      # Deliberately NOT pinning a tag here. The chart's own default
+      # (networktocode/nautobot:3.0-py3.13, matching its appVersion) is what
+      # ships, so the image moves when the chart version in Chart.yaml moves and
+      # Renovate's helmv3 manager is the single thing tracking it. Pinning a tag
+      # here would create a second, independently-drifting source of truth.
+      #
+      # pullPolicy override: the chart defaults to Always, which re-pulls a
+      # ~1GB image on every pod start against the free-tier egress budget.
+      pullPolicy: "IfNotPresent"
+
+    # Keep the per-pod init container (the default) rather than the
+    # single-Job hook. `singleInit: true` moves migrations into a Helm
+    # pre-install/pre-upgrade hook, but the upstream docs warn it must only be
+    # enabled once Nautobot has already been deployed at least once — and Helm
+    # hooks are awkward under ArgoCD besides. At replicaCount 1 there is only
+    # one init container, so the concurrent-migration hazard it exists to solve
+    # does not apply.
+    singleInit: false
+
+    # Every credential below comes from a Secret created out of band by
+    # scripts/bootstrap-nautobot-secrets.sh.
+    #
+    # This is not just the ADR 0003 "no secrets in a public repo" rule — it is
+    # required for correctness. The chart generates unset passwords with
+    # bitnami's common.secrets.passwords.manage, which relies on a cluster
+    # `lookup` to retain the previously generated value. ArgoCD renders with
+    # `helm template`, where lookup returns empty, so NAUTOBOT_SECRET_KEY, the
+    # superuser password and the API token would be regenerated on EVERY sync —
+    # invalidating all sessions and rotating the API token continuously.
+    #
+    # SECRET NAMES ARE DELIBERATELY NOT THE OBVIOUS ONES. The chart itself
+    # renders Secrets named `nautobot-env` (always, empty when everything uses
+    # existingSecret), `nautobot-env-init`, `nautobot-db` (when db.existingSecret
+    # is unset) and falls back to `nautobot-redis` for the Redis password. Naming
+    # our out-of-band Secrets any of those would put a chart-rendered, empty
+    # Secret and an operator-created, populated one at the same name — and
+    # ArgoCD, which owns this namespace with prune + selfHeal, would repeatedly
+    # overwrite the real credentials with the empty rendered object. The `-auth`
+    # / `-secret-key` names below are ones the chart never generates.
+    django:
+      existingSecret: "nautobot-secret-key"
+      existingSecretSecretKeyKey: "NAUTOBOT_SECRET_KEY"
+
+    db:
+      engine: "django.db.backends.postgresql"
+      # The nautobot-postgres release in this same namespace.
+      host: "nautobot-postgres"
+      port: 5432
+      name: "nautobot"
+      existingSecret: "nautobot-db-auth"
+      # BOTH key names are required when existingSecret is set — omitting
+      # either one fails the deploy rather than falling back to a default.
+      existingSecretUsernameKey: "username"
+      existingSecretPasswordKey: "password"
+
+    redis:
+      # The nautobot-redis release in this same namespace. Note the host is the
+      # release/Service name; the Secret below is a different, non-colliding
+      # name for the reason described above.
+      host: "nautobot-redis"
+      port: 6379
+      ssl: false
+      existingSecret: "nautobot-redis-auth"
+      existingSecretPasswordKey: "redis-password"
+
+    superUser:
+      enabled: true
+      username: "admin"
+      email: "hello@dackota.com"
+      existingSecret: "nautobot-superuser"
+      existingSecretPasswordKey: "password"
+      existingSecretApiTokenKey: "apitoken"
+
+    # Chart defaults are 300m/1280M requests and 1000m/8704M limits — sized for
+    # a real cluster. Trimmed to fit alongside everything else on two
+    # 2-OCPU/12GB Ampere nodes.
+    resources:
+      requests:
+        cpu: 250m
+        memory: 1Gi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+
+    # Chart default is 3 processes x 2 threads. Two processes is enough for a
+    # single-operator lab and meaningfully reduces the memory floor, since each
+    # uWSGI process carries its own copy of the Django app.
+    #
+    # NOTE: do not set `disableHttps` here. The Service template
+    # unconditionally targets a container port named "https", so removing it
+    # breaks Service rendering. uWSGI keeps listening on 8443 and simply goes
+    # unused — the HTTPRoute below targets the plain-HTTP port 80.
+    uwsgi:
+      processes: 2
+      threads: 2
+
+  # ---------------------------------------------------------------------------
+  # Celery worker + beat
+  # ---------------------------------------------------------------------------
+  # `.celery` is the template of defaults that every entry under `.workers`
+  # inherits; `.workers.<name>` overrides per deployment.
+  celery:
+    # Chart default is 2.
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 150m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1536Mi
+
+  workers:
+    default:
+      enabled: true
+      taskQueues: "default"
+    beat:
+      enabled: true
+      resources:
+        requests:
+          cpu: 25m
+          memory: 192Mi
+        limits:
+          cpu: 250m
+          memory: 384Mi
+      # The chart's default beat liveness probe is
+      # `find /tmp/nautobot_celery_beat_heartbeat -mmin -0.1`, i.e. it fails if
+      # the heartbeat file is more than SIX SECONDS stale. That is far too
+      # tight for a burstable pod on a shared free-tier node and restart-loops
+      # under any CPU contention. Relaxed to 1 minute, matching the tolerance
+      # the chart itself uses for the Celery *worker* heartbeat.
+      livenessProbe:
+        exec:
+          command:
+            - "bash"
+            - "-c"
+            - "[ $(find /tmp/nautobot_celery_beat_heartbeat -mmin -1 | wc -l) -eq 1 ] || false"
+
+  # ---------------------------------------------------------------------------
+  # NetworkPolicy
+  # ---------------------------------------------------------------------------
+  # Chart default is false. Enabled so Nautobot's own pods get the same
+  # default-deny-ingress posture generic-app-chart gives every other workload
+  # here — without it, this would be the one app in the repo with no policy at
+  # all, purely because it is the one app not on that chart.
+  #
+  # IMPORTANT CAVEAT: this is currently inert. The cluster runs OKE's
+  # vcn-native-ip-cni with no Calico/Cilium policy enforcer, so the API server
+  # accepts NetworkPolicy objects and nothing enforces them — true for every
+  # workload here, not just this one. It is declared anyway so the intent is
+  # recorded and takes effect if an enforcer is ever added. Because of this, the
+  # Redis and PostgreSQL passwords are load-bearing access control, not defence
+  # in depth.
+  networkPolicy:
+    enabled: true
+
+    # The chart's restricted-egress default allows ONLY DNS, the DB port and the
+    # Redis port. That would break Nautobot the moment a policy enforcer
+    # appeared: Git repository sync, plugin installation and outbound webhooks
+    # all need ordinary HTTPS egress, and none of them are covered. Rather than
+    # enumerate a guess at every destination, egress stays open and the policy
+    # does its useful work on the ingress side.
+    allowAllEgress: true
+
+    # Leaves the ingress allowance as ports 8080/8443 from any source. It reads
+    # broad — it renders an ipBlock of 0.0.0.0/0 — but it is what lets the
+    # Traefik Gateway (a pod in another namespace) reach the web tier, and it
+    # still denies every other port, so the Celery worker and beat pods, which
+    # serve nothing, end up fully closed.
+    allowExternalIngress: true
+
+  # ---------------------------------------------------------------------------
+  # Datastores: both bundled subcharts stay off
+  # ---------------------------------------------------------------------------
+  # These are the chart's own defaults (external datastores are the chart's
+  # default posture, not a workaround), restated because they are load-bearing.
+  # The bundled subcharts would actually pull — 3.1.2 already points them at
+  # bitnamilegacy/* after Bitnami's catalog change — but they are pinned to
+  # PostgreSQL 15.4.0 (Aug 2023) and Redis 7.4.2 images that Bitnami has frozen
+  # and will never patch again. See gitops/workloads/nautobot-{postgres,redis}.
+  postgresql:
+    enabled: false
+  redis:
+    enabled: false
+
+  # ---------------------------------------------------------------------------
+  # Routing: Gateway API through the shared Traefik Gateway
+  # ---------------------------------------------------------------------------
+  # This lab is Gateway API end to end (ADR 0004); no Ingress objects.
+  ingress:
+    enabled: false
+
+  route:
+    enabled: true
+    hostname: "nautobot.dackota.com"
+
+    gateway:
+      # MUST stay false. This flag makes the chart render its OWN Gateway, and
+      # a second Gateway means a second OCI load balancer — the Always-Free
+      # allowance is exactly one, already consumed by Traefik's data-plane
+      # Service. We attach to that shared Gateway via parentRefs instead.
+      enabled: false
+
+    # The shared Gateway in the traefik namespace. Attaching cross-namespace is
+    # allowed because the workloads ApplicationSet labels every workload
+    # namespace `gateway-access: "true"`, which is what the listener's
+    # namespacePolicy selector matches.
+    parentRefs:
+      - name: traefik-gateway
+        namespace: traefik
+        sectionName: websecure
+
+  # ---------------------------------------------------------------------------
+  # Resources the chart does not render
+  # ---------------------------------------------------------------------------
+  # The upstream chart renders an HTTPRoute but no cert-manager Certificate and
+  # no ReferenceGrant, so both come through its extraObjects passthrough
+  # (templates/extra-objects.yaml tpl's each entry). Together these are what
+  # generic-app-chart's `routing:` block produces for every other workload
+  # here; the shapes below deliberately mirror the live objects it renders.
+  extraObjects:
+    # Issues nautobot.dackota.com's certificate into the `nautobot-tls` Secret
+    # in this namespace. That Secret name must also be listed in the Traefik
+    # Gateway's websecure certificateRefs — see gitops/platform/traefik/values.yaml.
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      metadata:
+        name: nautobot-tls
+        namespace: nautobot
+      spec:
+        dnsNames:
+          - nautobot.dackota.com
+        issuerRef:
+          kind: ClusterIssuer
+          name: letsencrypt-prod
+        secretName: nautobot-tls
+
+    # Gateway API requires an explicit grant for a Gateway to read a Secret in
+    # another namespace. Without this the listener's certificateRefs entry is
+    # rejected and Traefik silently serves the wrong certificate for this SNI
+    # (ADR 0001 — app-owned routing, cross-namespace by design).
+    - apiVersion: gateway.networking.k8s.io/v1
+      kind: ReferenceGrant
+      metadata:
+        name: nautobot
+        namespace: nautobot
+      spec:
+        from:
+          - group: gateway.networking.k8s.io
+            kind: Gateway
+            namespace: traefik
+        to:
+          - group: ""
+            kind: Secret
+            name: nautobot-tls

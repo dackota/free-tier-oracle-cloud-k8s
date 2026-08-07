@@ -1,0 +1,18 @@
+apiVersion: v2
+name: nautobot
+description: >-
+  Nautobot — a Network Source of Truth and network automation platform,
+  consumed as a thin dependency on the upstream nautobot/nautobot chart. Unlike
+  every other workload here this does NOT use generic-app-chart: Nautobot is a
+  multi-workload app (web, Celery worker, Celery beat) and that chart renders
+  exactly one Deployment per release. Its PostgreSQL and Redis are separate
+  releases in this same namespace (nautobot-postgres, nautobot-redis) rather
+  than the chart's bundled Bitnami subcharts, which are pinned to frozen
+  bitnamilegacy images. Public at nautobot.dackota.com via the shared Traefik
+  Gateway.
+type: application
+version: 0.1.0
+dependencies:
+  - name: nautobot
+    version: 3.1.2
+    repository: https://nautobot.github.io/helm-charts/
