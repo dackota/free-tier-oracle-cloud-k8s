@@ -6,7 +6,9 @@ generic-app-chart:
   image:
     # Tracked by Renovate's built-in helm-values manager — see the longer note
     # in nautobot-postgres/values.yaml. No custom regex manager for this line.
-    repository: redis
+    # Fully qualified for the same reason as nautobot-postgres — the runtime
+    # rejects ambiguous short names for Docker Hub official images.
+    repository: docker.io/library/redis
     tag: "8-alpine"
 
   # `--save ""` disables RDB snapshotting outright. Nothing here is worth
