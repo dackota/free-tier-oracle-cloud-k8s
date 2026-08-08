@@ -25,7 +25,7 @@ generic-app-chart:
     # ghcr.io/dackota/*, so this only bites on Docker Hub official images —
     # which resolve under the implicit `library/` namespace.
     repository: docker.io/library/postgres
-    tag: "17-alpine"
+    tag: "18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15"
 
   env:
     - name: POSTGRES_DB
