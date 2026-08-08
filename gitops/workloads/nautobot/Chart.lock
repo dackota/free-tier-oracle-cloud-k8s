@@ -1,0 +1,6 @@
+dependencies:
+- name: nautobot
+  repository: https://nautobot.github.io/helm-charts/
+  version: 3.1.2
+digest: sha256:8bb19cd8984232b4d4f95d0d877081ee3edde1943eb2814208631c6c79f91523
+generated: "2026-08-07T16:39:21.416592-07:00"

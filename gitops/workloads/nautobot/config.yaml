@@ -1,0 +1,9 @@
+# Shared with the `nautobot-postgres` and `nautobot-redis` Applications — see
+# the note in nautobot-postgres/config.yaml.
+#
+# The directory name is load-bearing beyond the namespace: the workloads
+# ApplicationSet sets `releaseName: {{.path.basename}}`, and the upstream
+# chart's templates/gateway-api.yaml hardcodes the HTTPRoute backend as
+# `name: nautobot-default`. That only resolves to the rendered Service if the
+# release is named exactly `nautobot`. Do not rename this directory.
+namespace: nautobot

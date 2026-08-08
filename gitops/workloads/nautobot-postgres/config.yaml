@@ -1,0 +1,5 @@
+# Shared with the `nautobot` and `nautobot-redis` Applications, deliberately.
+# The three are one logical stack, and co-locating them means
+# generic-app-chart's default `networkPolicy.allowSameNamespace: true` already
+# permits Nautobot -> Postgres without any additionalIngress rules.
+namespace: nautobot
