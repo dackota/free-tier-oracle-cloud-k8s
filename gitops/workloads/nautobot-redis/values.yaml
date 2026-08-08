@@ -9,7 +9,7 @@ generic-app-chart:
     # Fully qualified for the same reason as nautobot-postgres — the runtime
     # rejects ambiguous short names for Docker Hub official images.
     repository: docker.io/library/redis
-    tag: "8-alpine"
+    tag: "8-alpine@sha256:978f0e01593e65eed801f2402944efcd936d43b5027e4908a7897baf88ed6241"
 
   # `--save ""` disables RDB snapshotting outright. Nothing here is worth
   # persisting: the Celery broker queue is in-flight background jobs (Nautobot
