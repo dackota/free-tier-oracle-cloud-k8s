@@ -18,7 +18,13 @@ generic-app-chart:
     # needs a pg_upgrade or a dump/restore — but Renovate classifies it as a
     # major update, which the workloads auto-merge tier deliberately excludes,
     # so it lands as a manual PR.
-    repository: postgres
+    # MUST be fully qualified. This cluster's container runtime enforces
+    # short-name resolution ("short name mode is enforcing, but image name
+    # postgres:17-alpine returns ambiguous list"), so a bare Docker Hub official
+    # image name fails to pull. Every other workload here happens to be
+    # ghcr.io/dackota/*, so this only bites on Docker Hub official images —
+    # which resolve under the implicit `library/` namespace.
+    repository: docker.io/library/postgres
     tag: "17-alpine"
 
   env:
