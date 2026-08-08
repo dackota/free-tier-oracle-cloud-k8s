@@ -28,7 +28,37 @@ nautobot:
     # Chart default is "*". Pinned to the real hostname now that there is one —
     # this is Django's ALLOWED_HOSTS and is the app's own Host-header defence,
     # independent of what the Gateway routes.
+    #
+    # This has a consequence that must be handled: the kubelet probes the pod by
+    # IP, so it sends `Host: <pod-ip>:8080`, which Django rejects with
+    # `DisallowedHost` -> HTTP 400 -> the pod NEVER becomes ready and the
+    # Service is left with no endpoint. The readinessProbe below therefore has
+    # to send an explicit Host header. Anything else added here that probes over
+    # HTTP needs the same treatment.
     allowedHosts: "nautobot.dackota.com"
+
+    # Identical to the chart default apart from the Host header, which is the
+    # whole point — see allowedHosts above. Restated in full rather than
+    # patching just httpGet.httpHeaders so the effective probe is readable here
+    # and cannot drift from the chart's defaults silently.
+    #
+    # The liveness probe needs no equivalent change: it is an exec
+    # (`nautobot-server health_check`), not an HTTP request, so no Host header
+    # is involved. startupProbe is disabled by default and would need the same
+    # header if it were ever turned on.
+    readinessProbe:
+      enabled: true
+      httpGet:
+        path: "/health/"
+        port: "http"
+        httpHeaders:
+          - name: Host
+            value: "nautobot.dackota.com"
+      initialDelaySeconds: 3
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 3
+      successThreshold: 1
 
     # Chart default is true, which serves Nautobot's Prometheus metrics at
     # /metrics with NO authentication (Nautobot's METRICS_AUTHENTICATED setting
