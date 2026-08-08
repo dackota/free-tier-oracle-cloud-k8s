@@ -84,6 +84,16 @@ gen() {
   openssl rand -base64 50 | tr -d '\n=/+' | cut -c1-50
 }
 
+# Nautobot's Token.key column is varchar(40), so the superuser API token must be
+# EXACTLY 40 characters — gen()'s 50 overflows it and the init container dies
+# with `DataError: value too long for type character varying(40)`, aborting
+# migrations and leaving the web pod permanently unready. 20 random bytes as hex
+# is 40 characters by construction, and hex matches the token format Nautobot
+# generates for itself.
+gen_token() {
+  openssl rand -hex 20
+}
+
 # create_secret <name> <key=value>...
 # Skips an existing Secret unless --force, in which case it is deleted and
 # recreated. The delete is deliberate rather than a plain `kubectl apply`: apply
@@ -144,7 +154,7 @@ create_secret "nautobot-redis-auth" \
 # instead.
 create_secret "nautobot-superuser" \
   "password=$(gen)" \
-  "apitoken=$(gen)"
+  "apitoken=$(gen_token)"
 
 echo
 echo "Done. Retrieve the initial superuser password with:"
