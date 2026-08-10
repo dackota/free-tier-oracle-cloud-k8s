@@ -14,10 +14,12 @@ generic-app-chart:
     #
     # `17-alpine` floats within the PostgreSQL 17 series, which is exactly what
     # we want: 17.x patches are drop-in, and the digest pin makes each one an
-    # explicit reviewable commit. A major bump (18-alpine) is NOT drop-in — it
-    # needs a pg_upgrade or a dump/restore — but Renovate classifies it as a
-    # major update, which the workloads auto-merge tier deliberately excludes,
-    # so it lands as a manual PR.
+    # explicit reviewable commit. A major bump is NOT drop-in — postgres refuses
+    # to start against a data directory written by an older major ("database
+    # files are incompatible with server"), so it needs a pg_upgrade or a
+    # dump/restore performed deliberately. The `automerge: major` carve-out in
+    # renovate.json is therefore scoped to ghcr.io/dackota/* own-artifact images
+    # only; third-party majors here land as a manual PR.
     # MUST be fully qualified. This cluster's container runtime enforces
     # short-name resolution ("short name mode is enforcing, but image name
     # postgres:17-alpine returns ambiguous list"), so a bare Docker Hub official
@@ -25,7 +27,7 @@ generic-app-chart:
     # ghcr.io/dackota/*, so this only bites on Docker Hub official images —
     # which resolve under the implicit `library/` namespace.
     repository: docker.io/library/postgres
-    tag: "18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15"
+    tag: "17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193"
 
   env:
     - name: POSTGRES_DB
