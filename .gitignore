@@ -37,3 +37,8 @@ kubeconfig.*
 
 # OS / editor cruft
 .DS_Store
+
+# Python bytecode from the scripts/ helpers. Convenience only — the entries
+# above are the security boundary, this one is not.
+__pycache__/
+*.pyc
