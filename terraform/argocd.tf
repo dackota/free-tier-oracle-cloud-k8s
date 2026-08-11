@@ -97,7 +97,7 @@ resource "helm_release" "argocd" {
   name             = "argocd"
   repository       = "https://argoproj.github.io/argo-helm"
   chart            = "argo-cd"
-  version          = "10.2.2" # pinned — see the values-sync contract above
+  version          = "10.3.0" # pinned — see the values-sync contract above
   namespace        = "argocd"
   create_namespace = true
 
