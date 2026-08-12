@@ -13,12 +13,23 @@ generic-app-chart:
     # Renovate tracks this tag via its built-in helm-values manager; new
     # releases of dackota/resume-website (tag v*) publish this image.
     repository: ghcr.io/dackota/resume-website
-    tag: "1.7.1@sha256:c22a29a7f1de856af8afc1eabecb1b075b2e4ef898541d8e8a7606976edb63c4"
+    tag: "1.8.0@sha256:a1542f41f3b9c2e5b618151426982a519a0c4ce38ad616d7b535b4fc6058cf13"
 
   # The image's nginx.conf keeps pid/temp paths under /tmp specifically so
   # the chart's strict defaults (arbitrary non-root uid,
   # readOnlyRootFilesystem, automatic /tmp emptyDir) apply unmodified — no
   # podSecurityContext/containerSecurityContext overrides here.
+
+  # nginx's envsubst entrypoint renders this into nginx.conf.template at
+  # container start, so /v1/traces can attach it as the Honeycomb ingest
+  # header without client JS ever seeing it. Secret pre-created out-of-band
+  # (resume-website namespace, key HONEYCOMB_API_KEY).
+  env:
+    - name: HONEYCOMB_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: honeycomb-api-key
+          key: HONEYCOMB_API_KEY
 
   # Static files from memory; tiny footprint on the capacity-constrained
   # free-tier node, matching the repo-wide small-requests pattern.
