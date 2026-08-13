@@ -103,45 +103,82 @@ traefik:
           - kind: Secret
             name: resume-website-tls
             namespace: resume-website
-  # Data-plane Service stays LoadBalancer (chart default), but is now backed by
-  # an OCI *Network* Load Balancer (L4) rather than the classic flexible LB.
-  # Two reasons, in order of importance:
+  # Two data-plane Services run side by side during the network-LB evaluation
+  # (step 1 of 2 — see the cutover note under additionalServices.nlb).
   #
-  #  1. Client source IP. The classic LB proxies every connection, so the
-  #     source address arriving in-cluster was the LB's, not the visitor's.
-  #     And because Traefik terminates TLS itself (the websecure listener
-  #     above), that LB ran a plain TCP listener — it could not inject an
-  #     X-Forwarded-For to compensate. Every request reached the workloads
-  #     anonymous. The NLB preserves the original address in the IP packet
-  #     header (is-preserve-source), which is what makes per-visitor and geo
-  #     dimensions possible in the workloads' telemetry at all.
-  #  2. Bandwidth. The classic LB was pinned to the free-tier flexible shape's
-  #     10 Mbps cap. Always Free covers one classic flexible LB *and* one
-  #     network LB as separate entitlements, so moving does not spend the
-  #     allowance twice — and the NLB is not bandwidth-shaped, so the cap goes
-  #     away with it.
+  # `service` below is the live one and is UNCHANGED: the classic flexible OCI
+  # LB at the free-tier 10 Mbps cap, holding the public IP that DNS points at.
+  # Every visitor still arrives through it. Its externalTrafficPolicy stays at
+  # the Kubernetes default (Cluster), so nothing about the serving path moves
+  # in this change.
   #
-  # is-preserve-source is honored only when externalTrafficPolicy is Local; OCI
-  # rejects the annotation outright under Cluster. Local is also the other half
-  # of why the address survives — kube-proxy stops SNATing to a node address —
-  # and it stops the NLB forwarding to nodes with no Traefik pod, which is what
-  # deployment.replicas below exists to keep from becoming a rollout outage.
+  # Why a second LB is being evaluated at all: the classic LB proxies every
+  # connection, so the source address arriving in-cluster is the LB's, not the
+  # visitor's — and because Traefik terminates TLS itself (the websecure
+  # listener above), it runs a plain TCP listener and cannot inject an
+  # X-Forwarded-For to compensate. Requests reach the workloads anonymous,
+  # which makes per-visitor and geo dimensions in their telemetry impossible.
   service:
     annotations:
-      oci.oraclecloud.com/load-balancer-type: "nlb"
-      oci-network-load-balancer.oraclecloud.com/is-preserve-source: "true"
-    # spec merges over the chart's default; type restated because it is
-    # load-bearing and now sits next to a sibling key.
-    spec:
-      type: LoadBalancer
-      externalTrafficPolicy: Local
-  # A second replica is required by externalTrafficPolicy: Local above, not
-  # wanted for its own sake. Under Local the NLB forwards only to nodes
-  # actually running a Traefik pod, so with a single replica every rolling
-  # update is a brief ingress outage: the pod moves node, and traffic resumes
-  # only once the NLB health check re-marks the new node healthy (~10s at the
-  # 3s interval / 3 retry defaults). A second replica keeps one healthy backend
-  # throughout the rollout.
+      service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+      service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+      service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "10"
+    # A second, parallel Service — its own OCI *network* LB (L4) on its own
+    # public IP, carrying no production traffic until DNS is pointed at it.
+    # This exists to be tested against before anything is swapped: hit its IP
+    # with `curl --resolve changes.<domain>:443:<nlb-ip>` and confirm the
+    # workloads log a real client address rather than a node address.
+    #
+    # is-preserve-source is what keeps the visitor's address in the IP packet
+    # header, and OCI honors it only when externalTrafficPolicy is Local —
+    # under Cluster the annotation is rejected outright, and kube-proxy would
+    # SNAT the address away regardless. The two are a single unit.
+    #
+    # Staying inside Always Free: the allowance covers one classic flexible LB
+    # *and* one network LB as separate entitlements, so running both at once
+    # for the length of the evaluation is still free. It is one of each; a
+    # second LB of either kind would not be.
+    #
+    # CUTOVER (a later change, deliberately not this one): once verified, point
+    # DNS at the NLB's IP, then delete the `service` annotations above and this
+    # `additionalServices` block, moving the NLB config onto the primary
+    # Service. Deleting this block while DNS still resolves to the classic LB
+    # is the rollback, and it is why the live Service is left untouched here.
+    additionalServices:
+      nlb:
+        single: true
+        annotations:
+          oci.oraclecloud.com/load-balancer-type: "nlb"
+          oci-network-load-balancer.oraclecloud.com/is-preserve-source: "true"
+        spec:
+          type: LoadBalancer
+          externalTrafficPolicy: Local
+  # A port reaches a Service only if it opts in by that Service's key, so the
+  # nlb Service would otherwise render with no ports and fail the chart's own
+  # "Cannot create Service without ports" guard. `default: true` is the chart
+  # default for both ports, restated here because it is load-bearing: dropping
+  # it would silently unpublish the live LB.
+  ports:
+    web:
+      expose:
+        default: true
+        nlb: true
+    websecure:
+      expose:
+        default: true
+        nlb: true
+  # A second replica is required by the nlb Service's externalTrafficPolicy:
+  # Local, not wanted for its own sake. Under Local the NLB forwards only to
+  # nodes actually running a Traefik pod, so with a single replica every
+  # rolling update is a brief ingress outage: the pod moves node, and traffic
+  # resumes only once the NLB health check re-marks the new node healthy (~10s
+  # at the 3s interval / 3 retry defaults). A second replica keeps one healthy
+  # backend throughout the rollout.
+  #
+  # Landed now rather than at cutover so the evaluation exercises the same
+  # topology the cutover will inherit. It is also the one change here that
+  # touches the live serving path — benignly, since the classic LB's Cluster
+  # policy is indifferent to which node a pod is on.
   deployment:
     replicas: 2
   # Spread those replicas across nodes, since two pods on one node would leave
