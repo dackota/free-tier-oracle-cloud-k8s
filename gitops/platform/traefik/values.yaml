@@ -1,8 +1,9 @@
 # Traefik (R23, ADR 0004), values under the `traefik:` subchart key. One chart
 # does three jobs via native upstream values: the proxy Deployment + its
-# data-plane LoadBalancer Service (the single Always Free OCI LB), the `traefik`
-# GatewayClass, and the shared `Gateway` with HTTP :80 (chart default) + HTTPS
-# :443 listeners.
+# data-plane LoadBalancer Service (the single Always Free OCI *network* LB —
+# see the service block below for why it is no longer the classic flexible
+# LB), the `traefik` GatewayClass, and the shared `Gateway` with HTTP :80
+# (chart default) + HTTPS :443 listeners.
 traefik:
   # Gateway API implementation (R23): enable the kubernetesGateway provider so
   # Traefik watches Gateway/HTTPRoute and owns the GatewayClass + Gateway below
@@ -102,15 +103,61 @@ traefik:
           - kind: Secret
             name: resume-website-tls
             namespace: resume-website
-  # Data-plane Service stays LoadBalancer (chart default) — provisions the
-  # single Always Free OCI LB. Pinned to the flexible shape at the free-tier
-  # 10 Mbps cap (a fixed shape is billable; a second LB of any shape exceeds
-  # the one-LB allowance).
+  # Data-plane Service stays LoadBalancer (chart default), but is now backed by
+  # an OCI *Network* Load Balancer (L4) rather than the classic flexible LB.
+  # Two reasons, in order of importance:
+  #
+  #  1. Client source IP. The classic LB proxies every connection, so the
+  #     source address arriving in-cluster was the LB's, not the visitor's.
+  #     And because Traefik terminates TLS itself (the websecure listener
+  #     above), that LB ran a plain TCP listener — it could not inject an
+  #     X-Forwarded-For to compensate. Every request reached the workloads
+  #     anonymous. The NLB preserves the original address in the IP packet
+  #     header (is-preserve-source), which is what makes per-visitor and geo
+  #     dimensions possible in the workloads' telemetry at all.
+  #  2. Bandwidth. The classic LB was pinned to the free-tier flexible shape's
+  #     10 Mbps cap. Always Free covers one classic flexible LB *and* one
+  #     network LB as separate entitlements, so moving does not spend the
+  #     allowance twice — and the NLB is not bandwidth-shaped, so the cap goes
+  #     away with it.
+  #
+  # is-preserve-source is honored only when externalTrafficPolicy is Local; OCI
+  # rejects the annotation outright under Cluster. Local is also the other half
+  # of why the address survives — kube-proxy stops SNATing to a node address —
+  # and it stops the NLB forwarding to nodes with no Traefik pod, which is what
+  # deployment.replicas below exists to keep from becoming a rollout outage.
   service:
     annotations:
-      service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
-      service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
-      service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "10"
+      oci.oraclecloud.com/load-balancer-type: "nlb"
+      oci-network-load-balancer.oraclecloud.com/is-preserve-source: "true"
+    # spec merges over the chart's default; type restated because it is
+    # load-bearing and now sits next to a sibling key.
+    spec:
+      type: LoadBalancer
+      externalTrafficPolicy: Local
+  # A second replica is required by externalTrafficPolicy: Local above, not
+  # wanted for its own sake. Under Local the NLB forwards only to nodes
+  # actually running a Traefik pod, so with a single replica every rolling
+  # update is a brief ingress outage: the pod moves node, and traffic resumes
+  # only once the NLB health check re-marks the new node healthy (~10s at the
+  # 3s interval / 3 retry defaults). A second replica keeps one healthy backend
+  # throughout the rollout.
+  deployment:
+    replicas: 2
+  # Spread those replicas across nodes, since two pods on one node would leave
+  # exactly the single-node-outage this is meant to avoid. Deliberately
+  # `preferred` and not `required`: this lab is small enough to be a
+  # single-node cluster, where a hard constraint would leave the second replica
+  # Pending forever and make rollouts worse, not better.
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: traefik
   resources:
     requests:
       cpu: 50m
