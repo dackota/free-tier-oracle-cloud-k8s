@@ -1,8 +1,9 @@
 # Traefik (R23, ADR 0004), values under the `traefik:` subchart key. One chart
 # does three jobs via native upstream values: the proxy Deployment + its
-# data-plane LoadBalancer Service (the single Always Free OCI LB), the `traefik`
-# GatewayClass, and the shared `Gateway` with HTTP :80 (chart default) + HTTPS
-# :443 listeners.
+# data-plane LoadBalancer Service — now two of them, the live classic OCI LB
+# plus a parallel network LB under evaluation (see the service block below) —
+# the `traefik` GatewayClass, and the shared `Gateway` with HTTP :80 (chart
+# default) + HTTPS :443 listeners.
 traefik:
   # Gateway API implementation (R23): enable the kubernetesGateway provider so
   # Traefik watches Gateway/HTTPRoute and owns the GatewayClass + Gateway below
@@ -112,15 +113,102 @@ traefik:
           - kind: Secret
             name: nautobot-tls
             namespace: nautobot
-  # Data-plane Service stays LoadBalancer (chart default) — provisions the
-  # single Always Free OCI LB. Pinned to the flexible shape at the free-tier
-  # 10 Mbps cap (a fixed shape is billable; a second LB of any shape exceeds
-  # the one-LB allowance).
+  # Two data-plane Services run side by side during the network-LB evaluation
+  # (step 1 of 2 — see the cutover note under additionalServices.nlb).
+  #
+  # `service` below is the live one and is UNCHANGED: the classic flexible OCI
+  # LB at the free-tier 10 Mbps cap, holding the public IP that DNS points at.
+  # Every visitor still arrives through it. Its externalTrafficPolicy stays at
+  # the Kubernetes default (Cluster), so nothing about the serving path moves
+  # in this change.
+  #
+  # Why a second LB is being evaluated at all: the classic LB proxies every
+  # connection, so the source address arriving in-cluster is the LB's, not the
+  # visitor's — and because Traefik terminates TLS itself (the websecure
+  # listener above), it runs a plain TCP listener and cannot inject an
+  # X-Forwarded-For to compensate. Requests reach the workloads anonymous,
+  # which makes per-visitor and geo dimensions in their telemetry impossible.
+  #
+  # (Supersedes the note that a second LB of any shape exceeds the allowance:
+  # that holds within a *kind*, and the two kinds are counted separately. See
+  # additionalServices.nlb below.)
   service:
     annotations:
       service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
       service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
       service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "10"
+    # A second, parallel Service — its own OCI *network* LB (L4) on its own
+    # public IP, carrying no production traffic until DNS is pointed at it.
+    # This exists to be tested against before anything is swapped: hit its IP
+    # with `curl --resolve changes.<domain>:443:<nlb-ip>` and confirm the
+    # workloads log a real client address rather than a node address.
+    #
+    # is-preserve-source is what keeps the visitor's address in the IP packet
+    # header, and OCI honors it only when externalTrafficPolicy is Local —
+    # under Cluster the annotation is rejected outright, and kube-proxy would
+    # SNAT the address away regardless. The two are a single unit.
+    #
+    # Staying inside Always Free: the allowance covers one classic flexible LB
+    # *and* one network LB as separate entitlements, so running both at once
+    # for the length of the evaluation is still free. It is one of each; a
+    # second LB of either kind would not be.
+    #
+    # CUTOVER (a later change, deliberately not this one): once verified, point
+    # DNS at the NLB's IP, then delete the `service` annotations above and this
+    # `additionalServices` block, moving the NLB config onto the primary
+    # Service. Deleting this block while DNS still resolves to the classic LB
+    # is the rollback, and it is why the live Service is left untouched here.
+    additionalServices:
+      nlb:
+        single: true
+        annotations:
+          oci.oraclecloud.com/load-balancer-type: "nlb"
+          oci-network-load-balancer.oraclecloud.com/is-preserve-source: "true"
+        spec:
+          type: LoadBalancer
+          externalTrafficPolicy: Local
+  # A port reaches a Service only if it opts in by that Service's key, so the
+  # nlb Service would otherwise render with no ports and fail the chart's own
+  # "Cannot create Service without ports" guard. `default: true` is the chart
+  # default for both ports, restated here because it is load-bearing: dropping
+  # it would silently unpublish the live LB.
+  ports:
+    web:
+      expose:
+        default: true
+        nlb: true
+    websecure:
+      expose:
+        default: true
+        nlb: true
+  # A second replica is required by the nlb Service's externalTrafficPolicy:
+  # Local, not wanted for its own sake. Under Local the NLB forwards only to
+  # nodes actually running a Traefik pod, so with a single replica every
+  # rolling update is a brief ingress outage: the pod moves node, and traffic
+  # resumes only once the NLB health check re-marks the new node healthy (~10s
+  # at the 3s interval / 3 retry defaults). A second replica keeps one healthy
+  # backend throughout the rollout.
+  #
+  # Landed now rather than at cutover so the evaluation exercises the same
+  # topology the cutover will inherit. It is also the one change here that
+  # touches the live serving path — benignly, since the classic LB's Cluster
+  # policy is indifferent to which node a pod is on.
+  deployment:
+    replicas: 2
+  # Spread those replicas across nodes, since two pods on one node would leave
+  # exactly the single-node-outage this is meant to avoid. Deliberately
+  # `preferred` and not `required`: this lab is small enough to be a
+  # single-node cluster, where a hard constraint would leave the second replica
+  # Pending forever and make rollouts worse, not better.
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: traefik
   resources:
     requests:
       cpu: 50m
