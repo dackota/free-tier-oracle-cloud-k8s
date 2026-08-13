@@ -58,6 +58,46 @@ generic-app-chart:
     - name: LISTEN_ADDR
       value: ":8080"
 
+    # Telemetry export + span dimensions (dackota/change-tracking-dashboard#198).
+    #
+    # A bare host:443 endpoint selects TLS in the app's parseEndpoint, so no
+    # scheme is needed; the API key becomes the x-honeycomb-team export header.
+    # Secrets are pre-created out-of-band in this namespace, matching the
+    # resume-website pattern: honeycomb-api-key (key HONEYCOMB_API_KEY) and
+    # visitor-id-salt (key VISITOR_ID_SALT).
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: "api.honeycomb.io:443"
+    - name: HONEYCOMB_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: honeycomb-api-key
+          key: HONEYCOMB_API_KEY
+
+    # Enables the visitor.id span attribute (a daily-rotating salted hash of
+    # client address + user agent). An empty salt disables the attribute
+    # outright rather than falling back to an unsalted hash, and the salt must
+    # stay identical across replicas or the same person derives a different id
+    # per pod and the distinct count multiplies.
+    - name: VISITOR_ID_SALT
+      valueFrom:
+        secretKeyRef:
+          name: visitor-id-salt
+          key: VISITOR_ID_SALT
+
+    # X-Forwarded-For is attacker-controlled on a directly reachable service,
+    # so the app only honors it when told to. This workload is reachable only
+    # through the shared Traefik Gateway, which sets the header itself.
+    #
+    # Until the OCI network LB (PR #134) fully replaces the classic LB, the
+    # address Traefik sees is a node IP rather than the real client, so
+    # visitor.id will under-count (roughly one visitor per node) even with this
+    # set. The wiring is correct now; the numbers become meaningful after that
+    # cutover. Geo attributes stay off: GEO_COUNTRY_HEADER / GEO_REGION_HEADER
+    # / GEO_CITY_HEADER are deliberately unset until a Traefik MaxMind plugin
+    # exists to populate those headers.
+    - name: TRUST_FORWARDED_FOR
+      value: "true"
+
   service:
     ports:
       - name: http
