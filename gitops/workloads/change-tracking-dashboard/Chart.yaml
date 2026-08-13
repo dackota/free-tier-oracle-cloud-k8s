@@ -1,8 +1,8 @@
 apiVersion: v2
 name: change-tracking-dashboard
 description: >-
-  change-tracking-dashboard (ctd-migrate-retire) — polls this GitOps repo's
-  history and surfaces tracked Helm chart/subchart/image version changes as a
+  change-tracking-dashboard — polls repo
+  history and surfaces tracked changes as a
   faceted, time-ordered feed, consumed as a thin OCI dependency on the
   published generic-app-chart. Proves the chart's full app-owned
   routing/TLS model end-to-end against a real stateful workload: Deployment,

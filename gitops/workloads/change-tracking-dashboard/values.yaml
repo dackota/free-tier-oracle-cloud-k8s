@@ -36,7 +36,7 @@ generic-app-chart:
     # config:best-practices) failed to write one and errored the whole
     # pin-dependencies branch.
     repository: ghcr.io/dackota/change-tracking-dashboard
-    tag: "0.13.4@sha256:84fc1a94b393e69211af73f92332ca583291d73d61e1aac2be0c5c5dc9e37f1c"
+    tag: "0.18.5@sha256:45b461410090788ba4f550f04b22333ab5532282ec7562bee7e67ebbac8bd1dc"
 
   # The app process runs as uid/gid 65534 ("nobody"), as the bespoke chart
   # hardcoded; generic-app-chart's own default is 10001. Setting these (with
@@ -149,19 +149,6 @@ generic-app-chart:
   config:
     config.yaml: |
       defaults:
-        # Back to 600 now that dackota/change-tracking-dashboard#137 has
-        # shipped (app v0.13.2, deployed above). 3600 was only ever an interim
-        # mitigation for that bug: the poller re-walked each file's git history
-        # once per tracked field, so a cycle cost ~52 CPU-seconds (229 walks,
-        # 210 of them the terraform tracker re-walking the same 21 files) and
-        # spent ~3m22s pinned to the 200m limit — a ~34% duty cycle at a 600s
-        # interval, for a repo that sees a handful of commits a day.
-        #
-        # Post-fix the poller walks once per glob. Measured on v0.13.2: a fresh
-        # pod's startup cycle (clone + 90-day backfill + first poll, the
-        # heaviest cycle there is) saturates 200m for ~80s, down from ~202s.
-        # A steady poll skips the clone and backfill, so the ~13% worst-case
-        # duty cycle at 600s is an upper bound, not the norm.
         pollIntervalSeconds: 600
         backfillDays: 90
       trackers:
@@ -235,10 +222,6 @@ generic-app-chart:
                 - name: node-pool-boot-volume-size
                   expr: "resource.oci_containerengine_node_pool.main.node_source_details.boot_volume_size_in_gbs"
 
-        # The other public repos in the dackota org. Each is its own tracker
-        # entry — the config format has no org-level discovery, so every repo
-        # is listed explicitly (config.TrackerRaw: repo + files + fields).
-        #
         # Two field shapes recur across all three, so they are defined the same
         # way everywhere:
         #
@@ -322,16 +305,6 @@ generic-app-chart:
                 - name: github-action-pins
                   expr: '[.jobs[]?.steps[]?.uses] | map(select(. != null)) | map(split("@")) | map(select(length > 1)) | map({(.[0]): .[1]}) | add'
 
-        # Not tracked, deliberately: dackota/dnd-cli, dackota/claude-projects,
-        # dackota/time-to-kill, and the dotfiles-mac-nix fork. The extractor
-        # only reads YAML/JSON (jq engine) and HCL (hcl engine, .tf/.tofu/
-        # .terraform.lock.hcl), and none of those repos contains a single file
-        # in either format — dnd-cli is go.mod/go.sum + Go, claude-projects is
-        # Markdown + shell, time-to-kill is Lua + a .toc. Adding them would
-        # cost a clone and a poll per cycle for zero extractable fields (and
-        # config validation rejects a tracker with no files anyway). They
-        # become trackable once the app grows an engine that can read
-        # go.mod/Dockerfile/plain-text pins.
       # Config-driven risk rules (change-tracking-dashboard PR #120). These are
       # APPENDED to the app's built-in DefaultRiskRules, not a replacement — the
       # shipped OCI cost/replace/security rules and the provider-agnostic

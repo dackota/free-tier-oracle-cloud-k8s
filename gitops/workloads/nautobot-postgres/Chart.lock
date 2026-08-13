@@ -1,0 +1,6 @@
+dependencies:
+- name: generic-app-chart
+  repository: oci://ghcr.io/dackota/charts
+  version: 3.0.0
+digest: sha256:262b28ecee1e0ea4796d4f2608471652cb375175dadf0a64db9300cbc1ac5701
+generated: "2026-08-07T16:39:21.899436-07:00"

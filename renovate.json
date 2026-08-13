@@ -27,11 +27,19 @@
       "automerge": true
     },
     {
-      "description": "own-artifact chart version + pinned image tag auto-merges at any level -- including major -- once required checks are green, with no release-age cooldown, so the dashboard's own commit-to-deploy path stays seamless.",
+      "description": "own-artifact chart version + pinned image tag auto-merges at any level -- including major -- once required checks are green, with no release-age cooldown, so the dashboard's own commit-to-deploy path stays seamless. Scoped to ghcr.io/dackota/* because we author those releases and know what a major carries.",
       "matchManagers": ["helmv3", "helm-values"],
       "matchFileNames": ["gitops/workloads/**"],
+      "matchPackageNames": ["ghcr.io/dackota/**"],
       "automerge": true,
       "minimumReleaseAge": "0 days"
+    },
+    {
+      "description": "Third-party workload images (postgres, redis) auto-merge patch+minor+digest only; major stays a manual PR. A stateful major is destructive rather than merely breaking -- postgres refuses to start against a data directory written by an older major, taking the workload down until someone runs a pg_upgrade or dump/restore. Keeps the top-level release-age cooldown, unlike the own-artifact tier above.",
+      "matchManagers": ["helmv3", "helm-values"],
+      "matchFileNames": ["gitops/workloads/**"],
+      "matchUpdateTypes": ["patch", "minor", "digest"],
+      "automerge": true
     },
     {
       "description": "GitHub Actions workflow updates are CI-only -- they never touch the deployed cluster, and a bump to an action used by pr-ci.yml runs that workflow with the new version on its own PR (self-testing). Auto-merge patch+minor+digest; major stays a manual PR.",

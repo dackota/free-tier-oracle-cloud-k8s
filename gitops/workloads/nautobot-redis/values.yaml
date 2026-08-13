@@ -1,0 +1,81 @@
+# Redis for Nautobot: Celery broker plus Django cache. Values nest under the
+# `generic-app-chart:` dependency key.
+generic-app-chart:
+  fullnameOverride: nautobot-redis
+
+  image:
+    # Tracked by Renovate's built-in helm-values manager — see the longer note
+    # in nautobot-postgres/values.yaml. No custom regex manager for this line.
+    # Fully qualified for the same reason as nautobot-postgres — the runtime
+    # rejects ambiguous short names for Docker Hub official images.
+    repository: docker.io/library/redis
+    tag: "8-alpine@sha256:978f0e01593e65eed801f2402944efcd936d43b5027e4908a7897baf88ed6241"
+
+  # `--save ""` disables RDB snapshotting outright. Nothing here is worth
+  # persisting: the Celery broker queue is in-flight background jobs (Nautobot
+  # re-runs what matters) and the rest is a cache. That is also why there is no
+  # `persistence` block below — no PVC, so no Longhorn volume spent on a cache
+  # and no Recreate-strategy restriction.
+  #
+  # $(REDIS_PASSWORD) is expanded by Kubernetes from the env entry below, not
+  # by a shell — the value never appears in the pod spec or in `kubectl get
+  # deploy -o yaml`, only the Secret reference does.
+  args:
+    - "--requirepass"
+    - "$(REDIS_PASSWORD)"
+    - "--save"
+    - ""
+
+  env:
+    # `nautobot-redis-auth` Secret is created out of band by
+    # scripts/bootstrap-nautobot-secrets.sh (ADR 0003 — no secrets in this
+    # public repo, and generic-app-chart never renders a Secret). The nautobot
+    # chart reads the same key via nautobot.redis.existingSecret.
+    #
+    # Named `-auth` rather than `nautobot-redis`, which is both this release's
+    # own Service name and the Nautobot chart's fallback Secret name for the
+    # Redis password. See the note in ../nautobot/values.yaml.
+    - name: REDIS_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: nautobot-redis-auth
+          key: redis-password
+
+  service:
+    ports:
+      - name: redis
+        port: 6379
+        targetPort: 6379
+        protocol: TCP
+
+  # Readiness is left to the chart's synthesized default — a tcpSocket check on
+  # the primary service port (6379). An exec `redis-cli ping` would have to
+  # carry the password on the command line on every probe, which is both
+  # noisier (redis-cli warns to stderr about -a) and worse for a marginal gain:
+  # a Redis that has accepted the TCP connection is serving.
+  #
+  # No liveness probe, for the same reason as postgres — restarting the broker
+  # under load loses in-flight tasks rather than fixing anything.
+
+  # The official redis image runs as uid 999 but gid 1000 (verified with
+  # `docker run --rm redis:8-alpine id redis`) — they do not match, which is
+  # easy to get wrong. No fsGroup is needed since there is no volume.
+  podSecurityContext:
+    runAsUser: 999
+    runAsGroup: 1000
+
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  # Cluster-internal only. Reach it for debugging with:
+  #   kubectl -n nautobot port-forward svc/nautobot-redis 6379:6379
+  routing:
+    enabled: false
+
+  # networkPolicy left at the chart default (default-deny-ingress with
+  # allowSameNamespace: true) — the Nautobot pods share this namespace.
