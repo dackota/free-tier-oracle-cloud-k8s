@@ -285,6 +285,32 @@ needs two manual steps that cannot live in this public repo:
    manually managed record — and cert-manager's HTTP-01 challenge fails and
    backs off until the record resolves.
 
+3. **Data (optional).** A freshly synced Nautobot is empty. Three scripts
+   populate it; all are idempotent, so re-running only fills in what is
+   missing. Each needs an API token from the `nautobot-superuser` Secret:
+
+   ```sh
+   export NAUTOBOT_TOKEN=$(kubectl --context <ctx> -n nautobot \
+     get secret nautobot-superuser -o jsonpath='{.data.apitoken}' | base64 -d)
+
+   python3 scripts/model_oci_cluster.py        # this cluster: region, VCN,
+                                               # subnets, OKE nodes, addressing
+   python3 scripts/seed_nautobot_demo_data.py  # Getting Started guide dataset
+   python3 scripts/tag_demo_data.py            # label the guide data demo-data
+   ```
+
+   `model_oci_cluster.py` records **real** infrastructure and tags it
+   `oci-live`. It deliberately stores no OCIDs — this repo is public and an
+   OCID identifies a real resource in the tenancy — so region, CIDR, shape and
+   version carry the meaning instead. Its node names and IPs are pinned to the
+   current node pool; after a rebuild, re-read the values named in its header
+   comment.
+
+   The other two are **fictional** teaching data from the upstream feature
+   guide, tagged `demo-data`. Run `tag_demo_data.py` whenever the demo set is
+   reseeded — both datasets share one instance, and nothing in the Nautobot UI
+   distinguishes them on sight.
+
 Nautobot is also the one workload not built on `generic-app-chart`: it is a
 multi-Deployment app (web, Celery worker, Celery beat) and that chart renders a
 single Deployment per release. It runs the upstream `nautobot/nautobot` chart,
