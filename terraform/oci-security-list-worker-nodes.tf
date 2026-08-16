@@ -52,6 +52,41 @@ resource "oci_core_security_list" "worker_nodes" {
   # so scope these two rules to the lbs subnet rather than the reference's
   # 0.0.0.0/0 — NodePort Services must not be reachable directly from the
   # internet (security-hardening follow-up; matches the kube-proxy rule below).
+  #
+  # traefik-nlb (gitops/platform/traefik/values.yaml, PR #134) is the one
+  # exception: it sets is-preserve-source, so packets reach the node still
+  # carrying the *client's* address rather than an lbs-subnet address — the
+  # rule above never matches them, and every connection through the NLB times
+  # out. Rather than widen the shared 30000-32767 rule to 0.0.0.0/0 (which
+  # would expose every current and future NodePort on this cluster), open
+  # only the two ports this Service actually uses. They're Kubernetes'
+  # auto-assigned nodePorts (unpinnable for now — .ports.*.nodePort in the
+  # chart is shared across all Services rendered from it, so pinning would
+  # collide with the primary `traefik` Service's own auto-assigned ports
+  # while both run in parallel) — confirm they still match
+  # `kubectl -n traefik get svc traefik-nlb` before trusting this rule, and
+  # revisit at cutover once only one Service remains and its ports can be
+  # pinned.
+  ingress_security_rules {
+    description = "traefik-nlb web (80) node port — is-preserve-source bypasses the lbs-subnet rule above"
+    source      = "0.0.0.0/0"
+    protocol    = local.protocol_numbers["TCP"]
+    tcp_options {
+      min = 31379
+      max = 31379
+    }
+  }
+
+  ingress_security_rules {
+    description = "traefik-nlb websecure (443) node port — is-preserve-source bypasses the lbs-subnet rule above"
+    source      = "0.0.0.0/0"
+    protocol    = local.protocol_numbers["TCP"]
+    tcp_options {
+      min = 32347
+      max = 32347
+    }
+  }
+
   ingress_security_rules {
     description = "Load balancer to worker nodes node TCP ports"
     source      = local.subnets.lbs
