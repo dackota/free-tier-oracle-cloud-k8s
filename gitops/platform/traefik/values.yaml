@@ -213,3 +213,9 @@ traefik:
     requests:
       cpu: 50m
       memory: 64Mi
+  # TEMPORARY (PR #134 follow-up): access logging, on only to confirm
+  # ClientHost in the log line is the real visitor address rather than a node
+  # address now that traefik-nlb's security-list gap is fixed. Revert this
+  # block once that's confirmed — it's diagnostic, not meant to stay on.
+  accessLog:
+    enabled: true
