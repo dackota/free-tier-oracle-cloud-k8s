@@ -57,6 +57,10 @@ generic-app-chart:
       value: /data/changes.db
     - name: LISTEN_ADDR
       value: ":8080"
+    # Adds visitor.persistent_id: a non-rotating, cookie-backed identifier
+    # for return-visit trackingthe id itself is a random value, not derived from anything sensitive.
+    - name: PERSISTENT_VISITOR_COOKIE
+      value: "true"
 
     # Telemetry export + span dimensions (dackota/change-tracking-dashboard#198).
     #
