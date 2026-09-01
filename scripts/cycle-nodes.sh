@@ -218,7 +218,15 @@ SERVER_VERSION="$(kc version -o json | jq -r '.serverVersion.gitVersion')"
 [ -n "$TARGET_VERSION" ] || TARGET_VERSION="$SERVER_VERSION"
 
 EXPECTED_NODES="$(node_count)"
-mapfile -t TO_CYCLE < <(nodes_needing_cycle)
+
+# read -r loop rather than `mapfile -t`: mapfile is a bash 4 builtin, and macOS
+# ships bash 3.2, where the script would abort here with "mapfile: command not
+# found". The `if` (not `&&`) keeps a blank line from returning non-zero as the
+# body's last command, which `set -e` would treat as a failure.
+TO_CYCLE=()
+while IFS= read -r line; do
+  if [ -n "$line" ]; then TO_CYCLE+=("$line"); fi
+done < <(nodes_needing_cycle)
 
 # One node means no drain target and no surviving Longhorn replica, so both of
 # this script's invariants are unreachable. Refuse rather than pretend.
@@ -276,7 +284,10 @@ for node in "${TO_CYCLE[@]}"; do
     --timeout="${DRAIN_TIMEOUT}s" || true
 
   if [ "$DRY_RUN" != "1" ]; then
-    mapfile -t stuck < <(stuck_workload_pods "$node")
+    stuck=()
+    while IFS= read -r line; do
+      if [ -n "$line" ]; then stuck+=("$line"); fi
+    done < <(stuck_workload_pods "$node")
     if [ "${#stuck[@]}" -gt 0 ]; then
       die "drain left real workload pods on $node: ${stuck[*]} -- investigate before terminating."
     fi
