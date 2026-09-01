@@ -1,3 +1,0 @@
-# Shared with the `nautobot` and `nautobot-postgres` Applications — see the
-# note in nautobot-postgres/config.yaml.
-namespace: nautobot
