@@ -31,7 +31,7 @@ argo-cd:
       server.insecure: "true"
 
   # No SSO/dex/Okta in v1 — disable dex-server entirely rather than run an idle
-  # pod on a 4 OCPU / 24 GB cluster.
+  # pod on a 2 OCPU / 12 GB cluster.
   dex:
     enabled: false
 
@@ -41,7 +41,7 @@ argo-cd:
     enabled: false
 
   # Modest, homelab-sized requests: this cluster is the full Always Free A1
-  # allowance (4 OCPU / 24 GB across 2 nodes), shared with every workload
+  # allowance (2 OCPU / 12 GB on one node), shared with every workload
   # ArgoCD goes on to manage.
   controller:
     replicas: 1

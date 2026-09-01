@@ -192,8 +192,8 @@ cluster = get_or_create(
     {"cluster_type": ctype["id"], "location": loc_region["id"],
      "comments": (
          f"OKE cluster, Kubernetes {K8S_VERSION}, CNI OCI_VCN_IP_NATIVE.\n"
-         f"Node pool k8s-pool: 2 x VM.Standard.A1.Flex (2 OCPU / 12 GB each), "
-         f"sized to the Always Free allocation of 4 OCPU / 24 GB."
+         f"Node pool k8s-pool: 1 x VM.Standard.A1.Flex (2 OCPU / 12 GB), "
+         f"sized to the Always Free allocation of 2 OCPU / 12 GB."
      )},
 )
 add_tag("virtualization/clusters", cluster, tag_live["id"], "oci-live on k8s-cluster")

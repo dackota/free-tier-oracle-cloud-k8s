@@ -16,7 +16,7 @@ cert-manager:
     enableGatewayAPI: true
 
   # Homelab-sized requests across the three controllers (controller, webhook,
-  # cainjector) on the 4 OCPU / 24 GB free-tier cluster.
+  # cainjector) on the 2 OCPU / 12 GB free-tier cluster.
   resources:
     requests:
       cpu: 10m

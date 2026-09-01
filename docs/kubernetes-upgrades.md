@@ -44,20 +44,23 @@ literal, reviewed on its own.
 1. **One minor version at a time.** OKE only allows upgrading the control plane
    by a single minor version (patch bumps like 1.36.0 → 1.36.1 are always fine).
    Check what's actually offered before planning (Step 1). Never skip minors.
-2. **No surge capacity + pod-count cap.** The cluster sits at the full
-   Always-Free allowance (2× A1, 4 OCPU / 24 GB, 200 GB / 2 boot volumes). There
-   is no room for a third (surge) node, so nodes are replaced **in place, one at
-   a time**. During each replacement everything runs on the single remaining
-   node — CPU/memory fit (combined requests ≈ 1.3 vCPU / 1.9 GiB vs. 1.8 vCPU /
-   9.2 GiB per node), but the VCN-native CNI **`max_pods_per_node = 31`** cap is
-   the binding limit: two full nodes hold ~48 pods, so while one node is down
-   its pods can't all fit on the survivor and some go **Pending** until the
-   replacement joins. Kubernetes has no built-in rebalancer, so pods can stay
-   concentrated on one node afterward (leaving DaemonSet pods Pending on a node
-   at its cap) — see the rebalance note under "If something goes wrong".
+2. **One node: the upgrade is an outage, and the pod cap binds.** The cluster
+   sits at the full Always-Free allowance, which Oracle halved on 2026-09-01 to
+   **2 OCPU / 12 GB** — that is a single A1 node (100 GB / 1 boot volume). There
+   is no second node to drain onto, so replacing it takes the whole cluster down
+   until the replacement joins. Budget for that; there is no zero-downtime path
+   on one node. `scripts/cycle-nodes.sh` refuses a single-node pool unless
+   `ALLOW_SINGLE_NODE=1` is set.
+
+   The VCN-native CNI **`max_pods_per_node = 31`** cap is also now the binding
+   limit in steady state, not just during a replacement. The cap is
+   `(OCPU - 1) × 31`, a hard per-VNIC ceiling, so it cannot be raised without
+   buying a third OCPU. Keep total desired pods under 31 or the surplus sits
+   **Pending** indefinitely.
 3. **Boot volumes must be deleted on terminate.** A leaked 100 GB boot volume
-   would put the account at 3 volumes / 300 GB, breach the block-storage cap,
-   and block the replacement from launching. The script always passes
+   would put the account at 2 volumes / 200 GB, leaving no room for the
+   replacement's own volume under the block-storage cap, and block it from
+   launching. The script always passes
    `--preserve-boot-volume false`.
 4. **Longhorn holds real data.** The `change-tracking-dashboard` SQLite volume
    lives on Longhorn (2 replicas, one per node). A node is never drained while
