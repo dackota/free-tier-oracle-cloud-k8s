@@ -1,5 +1,5 @@
 # Budget guardrail (R30): a near-zero-threshold OCI budget as the cost
-# backstop behind the free-tier tripwires (A1 shape ≤ 4 OCPU/24 GB, ≤ 200 GB
+# backstop behind the free-tier tripwires (A1 shape ≤ 2 OCPU/12 GB, ≤ 200 GB
 # block storage, 1 load balancer) — if any of those slip and spend occurs,
 # this budget's alert rules fire on both forecasted and actual spend.
 #

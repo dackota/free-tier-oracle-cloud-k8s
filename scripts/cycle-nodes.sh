@@ -11,12 +11,18 @@
 #   script performs that replacement.
 #
 # WHY IT IS CAREFUL (this cluster's specific constraints)
-#   * Free tier is at the FULL Always-Free allowance (2x A1 nodes, 4 OCPU /
-#     24 GB, exactly 200 GB / 2 boot volumes). There is NO room for a surge
-#     node, so nodes are replaced strictly ONE AT A TIME, in place. Terminate
-#     ALWAYS passes --preserve-boot-volume false: a leaked 100 GB boot volume
-#     would push the account to 3 volumes / 300 GB, breach the block-storage
-#     cap, and block the replacement node from ever launching.
+#   * Free tier is at the FULL Always-Free allowance (1x A1 node, 2 OCPU /
+#     12 GB, 100 GB / 1 boot volume). There is NO room for a surge node, so
+#     nodes are replaced strictly ONE AT A TIME, in place. Terminate ALWAYS
+#     passes --preserve-boot-volume false: a leaked 100 GB boot volume would
+#     push the account to 2 volumes / 200 GB, leave no room for the
+#     replacement's own volume, and block it from ever launching.
+#   * SINGLE-NODE POOLS ARE A DIFFERENT PROCEDURE. Everything below assumes a
+#     drained node's pods have a surviving node to land on, and that the
+#     drained node never holds a volume's last replica. Neither holds with one
+#     node: the cycle is a full outage, and Longhorn cannot keep any volume
+#     healthy across it. The preflight refuses unless ALLOW_SINGLE_NODE=1 is
+#     set to acknowledge that.
 #   * Longhorn holds real data (the change-tracking-dashboard SQLite volume).
 #     Before draining any node this script GATES on every Longhorn volume
 #     being `healthy`. With the default node-drain-policy
@@ -214,6 +220,12 @@ SERVER_VERSION="$(kc version -o json | jq -r '.serverVersion.gitVersion')"
 
 EXPECTED_NODES="$(node_count)"
 mapfile -t TO_CYCLE < <(nodes_needing_cycle)
+
+# One node means no drain target and no surviving Longhorn replica, so both of
+# this script's invariants are unreachable. Refuse rather than pretend.
+if [ "$EXPECTED_NODES" -le 1 ] && [ "${ALLOW_SINGLE_NODE:-0}" != "1" ]; then
+  die "single-node pool ($EXPECTED_NODES node): cycling it is a FULL OUTAGE and every Longhorn volume loses its only replica. Re-run with ALLOW_SINGLE_NODE=1 to accept that, or add a second node first."
+fi
 
 log "Node cycle plan"
 info "context        : $CONTEXT"

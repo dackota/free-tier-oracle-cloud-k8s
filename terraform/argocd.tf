@@ -35,7 +35,7 @@ locals {
     }
 
     # No SSO/dex/Okta in v1 — disable dex-server entirely rather than run an
-    # idle pod on a 4 OCPU / 24 GB cluster.
+    # idle pod on a 2 OCPU / 12 GB cluster.
     dex = {
       enabled = false
     }
@@ -47,7 +47,7 @@ locals {
     }
 
     # Modest, homelab-sized requests: this cluster is the full Always Free A1
-    # allowance (4 OCPU / 24 GB across 2 nodes), and ArgoCD shares it with
+    # allowance (2 OCPU / 12 GB on one node), and ArgoCD shares it with
     # every workload it goes on to manage — keep it small, don't
     # over-provision.
     controller = {
