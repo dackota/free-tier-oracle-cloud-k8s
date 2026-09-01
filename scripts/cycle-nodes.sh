@@ -4,11 +4,17 @@
 # template (new Kubernetes version and/or node image), one node at a time.
 #
 # WHEN TO RUN THIS
-#   AFTER a `terraform apply` that bumped the cluster's kubernetes_version (see
-#   docs/kubernetes-upgrades.md). That apply upgrades the *control plane* and
+#   AFTER a `terraform apply` that changed the node-pool template, either the
+#   cluster's kubernetes_version (see docs/kubernetes-upgrades.md) or the
+#   resolved node image_id. Such an apply upgrades the *control plane* and
 #   updates the node-pool *template*, but it does NOT touch running worker
-#   nodes -- they keep their old version/image until they are replaced. This
-#   script performs that replacement.
+#   nodes -- they keep their old version and image until they are replaced.
+#   This script performs that replacement.
+#
+#   An image_id change with no version change is the routine case: Oracle
+#   republishes patched images for a given Kubernetes version, and the pool's
+#   image selector picks up the newest one. A node is cycled when EITHER its
+#   kubelet version or its image is behind the template.
 #
 # WHY IT IS CAREFUL (this cluster's specific constraints)
 #   * There is NO room for a surge node, so nodes are replaced strictly ONE AT
@@ -161,20 +167,65 @@ node_count() { kc get nodes -o json | jq '.items | length'; }
 
 instance_ocid_for_node() { kc get node "$1" -o jsonpath='{.spec.providerID}'; }
 
-# Nodes whose kubelet is not yet at TARGET_VERSION, volume-holder LAST so the
-# stateful pod moves as few times as possible.
+# The image an instance was actually built from.
+instance_image_id() {
+  oci --region "$REGION" compute instance get --instance-id "$1" \
+    --query 'data."source-details"."image-id"' --raw-output 2>/dev/null || true
+}
+
+# The image the pool template will build the NEXT node from. Empty if it cannot
+# be resolved, which degrades this script to comparing kubelet versions only.
+#
+# The pool's OCID comes from the Oracle-Tags.CreatedBy defined tag that OKE
+# stamps on every instance it creates, so no extra flag is needed to find it.
+resolve_target_image() {
+  local node ocid pool
+  node="$(kc get nodes -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+  [ -n "$node" ] || return 0
+  ocid="$(instance_ocid_for_node "$node" 2>/dev/null || true)"
+  [ -n "$ocid" ] || return 0
+  pool="$(oci --region "$REGION" compute instance get --instance-id "$ocid" \
+    --query 'data."defined-tags"."Oracle-Tags".CreatedBy' --raw-output 2>/dev/null || true)"
+  case "$pool" in ocid1.nodepool.*) ;; *) return 0 ;; esac
+  oci --region "$REGION" ce node-pool get --node-pool-id "$pool" \
+    --query 'data."node-source-details"."image-id"' --raw-output 2>/dev/null || true
+}
+
+# A node needs no cycle when its kubelet is at TARGET_VERSION AND its instance
+# was built from TARGET_IMAGE. The image half is skipped when TARGET_IMAGE is
+# empty, or when the node's OCID cannot be read.
+node_is_current() {
+  local name="$1" kubelet ocid
+  kubelet="$(kc get node "$name" -o jsonpath='{.status.nodeInfo.kubeletVersion}' 2>/dev/null || true)"
+  [ -n "$kubelet" ] || return 1
+  [ "$kubelet" = "$TARGET_VERSION" ] || return 1
+  [ -n "$TARGET_IMAGE" ] || return 0
+  ocid="$(instance_ocid_for_node "$name" 2>/dev/null || true)"
+  [ -n "$ocid" ] || return 0
+  [ "$(instance_image_id "$ocid")" = "$TARGET_IMAGE" ]
+}
+
+# Nodes that are behind on kubelet version OR on node image, volume-holder LAST
+# so the stateful pod moves as few times as possible.
+#
+# Image drift matters on its own: a node-pool image bump at an UNCHANGED
+# Kubernetes version is the routine case (Oracle republishes patched images for
+# a given version), and comparing kubelet alone reports "nothing to do" while
+# every node still runs the superseded image.
 nodes_needing_cycle() {
-  local holder=""
+  local holder="" name
   if lh_present; then
     holder="$(kc -n longhorn-system get volumes.longhorn.io -o json 2>/dev/null \
       | jq -r '[.items[].status.currentNodeID] | map(select(. != null and . != "")) | first // ""')"
   fi
-  kc get nodes -o json | jq -r --arg tgt "$TARGET_VERSION" --arg holder "$holder" '
-    [ .items[]
-      | select(.status.nodeInfo.kubeletVersion != $tgt)
-      | .metadata.name ]
+  kc get nodes -o json | jq -r --arg holder "$holder" '
+    [ .items[].metadata.name ]
     | sort_by(. == $holder)   # false(0) before true(1): holder sorts last
-    | .[]'
+    | .[]' \
+  | while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      if ! node_is_current "$name"; then printf '%s\n' "$name"; fi
+    done
 }
 
 # Real (non-DaemonSet, non-Longhorn-system, non-completed) pods still bound to a
@@ -219,6 +270,10 @@ SERVER_VERSION="$(kc version -o json | jq -r '.serverVersion.gitVersion')"
 
 EXPECTED_NODES="$(node_count)"
 
+# Resolved once: every staleness check compares against it. Empty is tolerated
+# and means image drift is not checked this run (see resolve_target_image).
+TARGET_IMAGE="$(resolve_target_image)"
+
 # read -r loop rather than `mapfile -t`: mapfile is a bash 4 builtin, and macOS
 # ships bash 3.2, where the script would abort here with "mapfile: command not
 # found". The `if` (not `&&`) keeps a blank line from returning non-zero as the
@@ -239,13 +294,18 @@ info "context        : $CONTEXT"
 info "region         : $REGION"
 info "control plane  : $SERVER_VERSION"
 info "target kubelet : $TARGET_VERSION"
+info "target image   : ${TARGET_IMAGE:-<unresolved: image drift not checked>}"
 info "expected nodes : $EXPECTED_NODES"
 info "dry-run        : $DRY_RUN"
 if [ "$SERVER_VERSION" != "$TARGET_VERSION" ]; then
   info "NOTE: target ($TARGET_VERSION) != control plane ($SERVER_VERSION); that is unusual for a post-apply cycle."
 fi
 if [ "${#TO_CYCLE[@]}" -eq 0 ]; then
-  log "Nothing to do -- every node is already at $TARGET_VERSION."
+  if [ -n "$TARGET_IMAGE" ]; then
+    log "Nothing to do -- every node is already at $TARGET_VERSION on the pool's current image."
+  else
+    log "Nothing to do -- every node is already at $TARGET_VERSION."
+  fi
   exit 0
 fi
 info "nodes to cycle : ${TO_CYCLE[*]}"
@@ -257,9 +317,14 @@ for node in "${TO_CYCLE[@]}"; do
   log "Cycling node $node"
 
   # Re-check the node still needs cycling (a prior partial run may have done it).
-  cur="$(kc get node "$node" -o jsonpath='{.status.nodeInfo.kubeletVersion}' 2>/dev/null || true)"
-  if [ -z "$cur" ]; then info "Node $node no longer exists; skipping."; continue; fi
-  if [ "$cur" = "$TARGET_VERSION" ]; then info "Node $node already at $TARGET_VERSION; skipping."; continue; fi
+  if ! kc get node "$node" >/dev/null 2>&1; then
+    info "Node $node no longer exists; skipping."
+    continue
+  fi
+  if node_is_current "$node"; then
+    info "Node $node is already at $TARGET_VERSION on the pool's current image; skipping."
+    continue
+  fi
 
   info "Gate 1/3: every Longhorn volume must be healthy before draining."
   wait_lh_healthy
