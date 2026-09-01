@@ -11,12 +11,11 @@
 #   script performs that replacement.
 #
 # WHY IT IS CAREFUL (this cluster's specific constraints)
-#   * Free tier is at the FULL Always-Free allowance (1x A1 node, 2 OCPU /
-#     12 GB, 100 GB / 1 boot volume). There is NO room for a surge node, so
-#     nodes are replaced strictly ONE AT A TIME, in place. Terminate ALWAYS
-#     passes --preserve-boot-volume false: a leaked 100 GB boot volume would
-#     push the account to 2 volumes / 200 GB, leave no room for the
-#     replacement's own volume, and block it from ever launching.
+#   * There is NO room for a surge node, so nodes are replaced strictly ONE AT
+#     A TIME, in place. Terminate ALWAYS passes --preserve-boot-volume false:
+#     the Always-Free block-storage cap is 200 GB across at most 2 volumes, so
+#     a leaked 100 GB boot volume leaves no room for the replacement's own and
+#     blocks it from ever launching.
 #   * SINGLE-NODE POOLS ARE A DIFFERENT PROCEDURE. Everything below assumes a
 #     drained node's pods have a surviving node to land on, and that the
 #     drained node never holds a volume's last replica. Neither holds with one

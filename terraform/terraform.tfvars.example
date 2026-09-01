@@ -12,6 +12,17 @@ compartment_ocid = "ocid1.compartment.oc1..aaaaaaaaexamplecompartmentocidxxxxxxx
 # Placeholder only — never commit a real email address (ADR 0003).
 budget_alert_email_address = "alerts@example.com"
 
+# Optional: node-pool sizing. Defaults to 2 nodes, which the current workload
+# needs. Every node past the first is billed: Always Free A1 covers 2 OCPU /
+# 12 GB, one node at this config's per-node sizing.
+#
+# Uncomment worker_node_count to change how many nodes run. Uncomment
+# stay_within_free_tier to pin the pool to the free allowance instead, which
+# overrides the count to 1 -- do that only after trimming at least two pods,
+# since one node caps the cluster at 31 and the workload measures 33.
+# worker_node_count     = 2
+# stay_within_free_tier = true
+
 # Optional (R14): CIDRs allowed to open sessions against the managed OCI Bastion.
 # Defaults to ["0.0.0.0/0"] — see oci-bastion.tf for why that's a deliberate,
 # defense-in-depth-gated default. Uncomment and narrow to your static IP/CIDR

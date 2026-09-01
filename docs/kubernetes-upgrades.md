@@ -44,19 +44,27 @@ literal, reviewed on its own.
 1. **One minor version at a time.** OKE only allows upgrading the control plane
    by a single minor version (patch bumps like 1.36.0 → 1.36.1 are always fine).
    Check what's actually offered before planning (Step 1). Never skip minors.
-2. **One node: the upgrade is an outage, and the pod cap binds.** The cluster
-   sits at the full Always-Free allowance, which Oracle halved on 2026-09-01 to
-   **2 OCPU / 12 GB** — that is a single A1 node (100 GB / 1 boot volume). There
-   is no second node to drain onto, so replacing it takes the whole cluster down
-   until the replacement joins. Budget for that; there is no zero-downtime path
-   on one node. `scripts/cycle-nodes.sh` refuses a single-node pool unless
-   `ALLOW_SINGLE_NODE=1` is set.
+2. **Node count is a variable, and it changes the procedure.** Always Free A1
+   covers **2 OCPU / 12 GB**, a single node at this config's per-node sizing.
+   `var.stay_within_free_tier` (variables.tf) selects between that one free node
+   and `var.worker_node_count` billed ones. Check which you are on before
+   planning an upgrade, because the two cases behave differently:
 
-   The VCN-native CNI **`max_pods_per_node = 31`** cap is also now the binding
-   limit in steady state, not just during a replacement. The cap is
-   `(OCPU - 1) × 31`, a hard per-VNIC ceiling, so it cannot be raised without
-   buying a third OCPU. Keep total desired pods under 31 or the surplus sits
-   **Pending** indefinitely.
+   - **One node.** There is nothing to drain onto, so replacing it takes the
+     whole cluster down until the replacement joins. There is no zero-downtime
+     path. `scripts/cycle-nodes.sh` refuses a single-node pool unless
+     `ALLOW_SINGLE_NODE=1` is set.
+   - **Two or more.** Replace strictly one at a time. There is no surge
+     capacity, so the survivors absorb the drained node's pods.
+
+   The VCN-native CNI **`max_pods_per_node = 31`** cap binds in both cases. It
+   is `(OCPU - 1) × 31`, a hard per-VNIC ceiling that cannot be raised without
+   buying a third OCPU. Measured demand for the current workload is **33 pods**
+   (22 single-instance, plus 11 per node: 10 DaemonSets and Longhorn's
+   instance-manager). So the workload does **not** fit on one node, and on two
+   it does not fit on the survivor during a replacement either — expect some
+   pods **Pending** until the replacement joins. Kubernetes has no built-in
+   rebalancer, so pods can stay concentrated afterward.
 3. **Boot volumes must be deleted on terminate.** A leaked 100 GB boot volume
    would put the account at 2 volumes / 200 GB, leaving no room for the
    replacement's own volume under the block-storage cap, and block it from

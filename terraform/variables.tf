@@ -76,3 +76,34 @@ variable "budget_alert_email_address" {
     error_message = "budget_alert_email_address must be a valid email address (e.g. alerts@example.com)."
   }
 }
+
+# Free-tier guardrail. Always Free A1 covers 2 OCPU / 12 GB, which is exactly
+# one node at the per-node sizing in oci-containerengine-nodepool.tf. Every
+# node past the first is billed, and on a Pay As You Go tenancy nothing in the
+# OCI API refuses one.
+#
+# Defaults to false because the current workload does not fit on one node. One
+# node caps the cluster at 31 pods: the VCN-native CNI allows (OCPU - 1) x 31
+# pod IPs, and raising that ceiling takes a third OCPU. Demand measures 33 pods
+# (22 single-instance, plus 11 that run on every node: 10 DaemonSets and
+# Longhorn's instance-manager). Set this true only after trimming at least two
+# pods, or the surplus sits Pending indefinitely.
+variable "stay_within_free_tier" {
+  description = "Pin the node pool to what the Always Free A1 allowance covers (2 OCPU / 12 GB, which is one node at this config's per-node sizing). Leave false to run var.worker_node_count nodes and accept billing for everything past the free allowance."
+  type        = bool
+  default     = false
+}
+
+# Consulted unless var.stay_within_free_tier is true, which overrides it with
+# one node. Its own variable rather than a literal in the node pool, so sizing
+# the cluster is a values change instead of a resource edit.
+variable "worker_node_count" {
+  description = "Number of worker nodes to run. Ignored when var.stay_within_free_tier is true, which pins the pool to one node. Every node past the first is billed."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.worker_node_count >= 1
+    error_message = "worker_node_count must be at least 1: a node pool with no nodes cannot run any workload."
+  }
+}
