@@ -101,7 +101,13 @@ info() { printf '   %s\n' "$*"; }
 die() { printf '\033[31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
 run() { # echo + execute, or just echo under --dry-run
-  info "\$ $*"
+  # Echo the real command, never the kc() wrapper. A dry run doubles as a
+  # manual runbook, and `kc` exists only inside this script, so an echoed
+  # `kc cordon ...` is not something the reader can paste into a shell.
+  case "$1" in
+    kc) info "\$ kubectl --context $CONTEXT ${*:2}" ;;
+    *) info "\$ $*" ;;
+  esac
   [ "$DRY_RUN" = "1" ] && return 0
   "$@"
 }
