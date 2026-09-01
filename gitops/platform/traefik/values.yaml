@@ -61,15 +61,6 @@ traefik:
       #                                            generic-app-chart, so its Certificate renders in
       #                                            its own namespace; cross-namespace per ADR 0001,
       #                                            hence the explicit `namespace` below)
-      #   - nautobot-tls (ns nautobot)          -> nautobot.<baseDomain>
-      #                                            (nautobot — the one workload NOT on
-      #                                            generic-app-chart, since it is a multi-Deployment
-      #                                            app; it runs the upstream nautobot chart, whose
-      #                                            HTTPRoute is native but which renders no
-      #                                            Certificate or ReferenceGrant, so both are
-      #                                            supplied through that chart's `extraObjects`.
-      #                                            Same app-owned, cross-namespace model per ADR 0001,
-      #                                            hence the explicit `namespace` below)
       #
       # NOTE: the old `traefik-gateway-tls` Secret (this `traefik` namespace)
       # is now orphaned by the R32 migration above — cert-manager does not
@@ -126,9 +117,6 @@ traefik:
           - kind: Secret
             name: resume-website-tls
             namespace: resume-website
-          - kind: Secret
-            name: nautobot-tls
-            namespace: nautobot
   # The classic flexible OCI LB (10 Mbps free-tier cap) proxied every
   # connection, so the source address arriving in-cluster was the LB's, not
   # the visitor's — and because Traefik terminates TLS itself (the websecure
