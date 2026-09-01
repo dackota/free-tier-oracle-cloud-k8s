@@ -13,11 +13,14 @@ longhorn:
   # the whole Application. There's nothing to pre-check on a first install.
   preUpgradeChecker:
     jobEnabled: false
-  # The CSI sidecars default to 3 replicas each (12 pods) and the UI to 2, all
-  # for cross-node HA that a single-node pool cannot provide -- every extra
-  # replica just lands on the same node. Held at 1 to stay under the VCN-native
-  # CNI's max_pods_per_node = 31 cap. Restore the chart defaults if the pool
-  # ever grows past one node.
+  # Helm cannot read Terraform, so every replica count below tracks the pool
+  # size by hand. None may exceed the node count: var.worker_node_count, or 1
+  # whenever var.stay_within_free_tier is true.
+  #
+  # The CSI sidecars default to 3 replicas each (12 pods) and the UI to 2, for
+  # control-plane HA. Held at 1, below the node count on purpose: these are
+  # leader-elected, so a spare buys a faster failover rather than availability,
+  # and each spends a slot against the CNI's max_pods_per_node = 31 cap.
   csi:
     attacherReplicaCount: 1
     provisionerReplicaCount: 1
@@ -27,8 +30,9 @@ longhorn:
     replicas: 1
   persistence:
     defaultClass: true
-    # One node in the pool (see terraform/oci-containerengine-nodepool.tf), so
-    # one replica. Longhorn schedules each replica on a distinct node; asking
-    # for 2 on a single-node cluster leaves every volume degraded forever.
-    # Raise this back to 2 the same day a second node is added.
-    defaultClassReplicaCount: 1
+    # Volume data redundancy, so this one tracks the node count exactly rather
+    # than sitting below it. It must never exceed it: Longhorn puts each
+    # replica on a distinct node, and asking for more replicas than nodes
+    # leaves every volume degraded forever. Drop to 1 alongside
+    # var.stay_within_free_tier.
+    defaultClassReplicaCount: 2

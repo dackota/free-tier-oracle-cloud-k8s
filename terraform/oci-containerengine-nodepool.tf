@@ -1,15 +1,12 @@
-# R12/R13: the Always Free A1 node pool. Deliberately literal, per-node sizing
-# (KISS) rather than the reference's pool-total-divided-by-size math: 1 node
-# x 2 OCPU / 12 GB / 100 GB boot claims the FULL Always Free A1 allowance
-# (2 OCPU / 12 GB total) and sits at half the 200 GB / 2-volume block-storage
-# cap. Do not raise size, ocpus, memory_in_gbs, or boot_volume_size_in_gbs
-# without re-checking the free-tier tripwires in CONTEXT.md / the PRD's
-# Implementation Decisions.
+# R12/R13: the A1 node pool. Deliberately literal, per-node sizing (KISS)
+# rather than the reference's pool-total-divided-by-size math: one node at
+# 2 OCPU / 12 GB / 100 GB boot is the whole Always Free A1 allowance, and sits
+# at half the 200 GB / 2-volume block-storage cap. Do not raise ocpus,
+# memory_in_gbs, or boot_volume_size_in_gbs without re-checking the free-tier
+# tripwires in CONTEXT.md / the PRD's Implementation Decisions.
 #
-# On 2026-09-01 Oracle halved the Always Free A1 allowance from 4 OCPU / 24 GB
-# to 2 OCPU / 12 GB. The pool had been 2 nodes at that old ceiling, so both
-# instances were disabled tenancy-side and would not restart. Anything that
-# takes this pool back above one node is paid capacity, not free tier.
+# Node count comes from var.stay_within_free_tier (variables.tf): one node when
+# true, var.worker_node_count when false. Every node past the first is billed.
 resource "oci_containerengine_node_pool" "main" {
   cluster_id = oci_containerengine_cluster.main.id
 
@@ -21,7 +18,9 @@ resource "oci_containerengine_node_pool" "main" {
   kubernetes_version = oci_containerengine_cluster.main.kubernetes_version
 
   node_config_details {
-    size = 1 # R12: exactly 1 node -> 2 OCPU / 12 GB total across the pool
+    # R12: one node is the whole Always Free allowance. Each node past it adds
+    # 2 OCPU / 12 GB of billed capacity.
+    size = var.stay_within_free_tier ? 1 : var.worker_node_count
 
     dynamic "placement_configs" {
       for_each = data.oci_identity_availability_domains.worker_nodes.availability_domains
@@ -54,8 +53,11 @@ resource "oci_containerengine_node_pool" "main" {
   node_shape = "VM.Standard.A1.Flex"
 
   node_shape_config {
-    ocpus         = 2  # R12: per node -> 1 node x 2 OCPU = 2 OCPU total
-    memory_in_gbs = 12 # R12: per node -> 1 node x 12 GB = 12 GB total
+    # R12: per node, and the full Always Free A1 allowance. Literal whatever
+    # size resolves to: the allowance covers ONE node, so a second duplicates
+    # these as billed capacity rather than stretching the free ones further.
+    ocpus         = 2
+    memory_in_gbs = 12
   }
 
   node_source_details {
@@ -80,11 +82,12 @@ resource "oci_containerengine_node_pool" "main" {
       strcontains(s.source_name, "OKE-${trimprefix(oci_containerengine_cluster.main.kubernetes_version, "v")}")
     ])[0], null)
 
-    # R13: <=100 GB per node -> 1 node x 100 GB = 100 GB total boot storage,
-    # half the Always Free block-storage cap (200 GB / 2 volumes). Held at 100
-    # deliberately rather than raised to the full 200: replacing the node
-    # transiently needs a second boot volume, and 2 x 100 GB is the largest
-    # pair that still fits under the cap.
+    # R13: 100 GB per node. The Always Free block-storage cap is 200 GB across
+    # at most 2 volumes, and boot volumes count against it, so 100 GB is the
+    # largest size that still leaves room for a second volume. That headroom is
+    # not spare capacity to reclaim: replacing a node transiently needs its
+    # replacement's boot volume alongside the outgoing one, so raising this to
+    # 200 would make every node replacement fail on the cap.
     boot_volume_size_in_gbs = 100
   }
 
